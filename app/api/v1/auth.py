@@ -8,7 +8,7 @@ from app.schemas.token import Token
 from app.repositories.user_repository import UserRepository
 from app.services import security
 from app.core.config import settings
-from app.api.v1.dependencies import get_db
+from app.api.dependencies import get_db
 
 router = APIRouter()
 
