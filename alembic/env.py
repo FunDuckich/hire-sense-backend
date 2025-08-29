@@ -9,6 +9,7 @@ from app.core.database import Base
 from app.models.user import User
 from app.models.vacancy import Vacancy, EvaluationCriterion
 from app.models.application import Application
+from app.models.interview import InterviewSession, InterviewTranscript
 
 import os
 import sys
