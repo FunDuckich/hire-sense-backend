@@ -1,6 +1,7 @@
 import enum
 from sqlalchemy import Column, Integer, String, Enum
 from app.core.database import Base
+from sqlalchemy.orm import relationship
 
 
 class Role(str, enum.Enum):
@@ -17,3 +18,4 @@ class User(Base):
     company_name = Column(String, nullable=True)  # Только для HR
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(Role), nullable=False)
+    applications = relationship("Application", back_populates="candidate")
