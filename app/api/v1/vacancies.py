@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.schemas.vacancy import VacancyCreate, VacancyOut
+from app.schemas.vacancy import VacancyCreate, VacancyOut, VacancyUpdate
 from app.repositories.vacancy_repository import VacancyRepository
 from app.api.dependencies import get_db, get_current_hr_user
 
@@ -34,3 +34,30 @@ def read_vacancy(vacancy_id: int, db: Session = Depends(get_db)):
     if db_vacancy is None:
         raise HTTPException(status_code=404, detail="Vacancy not found")
     return db_vacancy
+
+
+@router.put("/{vacancy_id}", response_model=VacancyOut)
+def update_vacancy(
+        vacancy_id: int,
+        vacancy_in: VacancyUpdate,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    vacancy_repo = VacancyRepository(db)
+    updated_vacancy = vacancy_repo.update_vacancy(vacancy_id=vacancy_id, vacancy_data=vacancy_in)
+    if updated_vacancy is None:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    return updated_vacancy
+
+
+@router.delete("/{vacancy_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_vacancy(
+        vacancy_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    vacancy_repo = VacancyRepository(db)
+    deleted_vacancy = vacancy_repo.delete_vacancy(vacancy_id=vacancy_id)
+    if deleted_vacancy is None:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    return  # Возвращаем пустой ответ со статусом 204
