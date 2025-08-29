@@ -1,24 +1,21 @@
-import os
 import asyncio
 import grpc
+import json
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 from app.core.config import settings
 import yandexcloud
-import yandex.cloud.ai.stt.v2.stt_service_pb2_grpc as stt_service_grpc
 
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    with open("authorized_key.json", 'r', encoding='utf-8') as key_file:
+        sa_key_data = json.load(key_file)
+except Exception as e:
+    raise RuntimeError(f"Не удалось прочитать файл authorized_key.json: {e}")
 
-sdk = yandexcloud.SDK(service_account_key={
-    "id": settings.YC_API_KEY_ID,
-    "private_key": settings.YC_API_KEY_SECRET.replace('\\n', '\n')
-})
-stt_channel = sdk.client(stt_service_grpc.SttServiceStub)
+sdk = yandexcloud.SDK(service_account_key=sa_key_data)
 
-API_KEY = os.getenv("YC_API_KEY")
+recognizer_stub = sdk.client(stt_service_pb2_grpc.RecognizerStub)
 
-# --- ИСПРАВЛЕННАЯ КОНФИГУРАЦИЯ СЕССИИ ---
 SESSION_OPTIONS = stt_pb2.StreamingOptions(
     recognition_model=stt_pb2.RecognitionModelOptions(
         audio_format=stt_pb2.AudioFormatOptions(
@@ -40,52 +37,33 @@ SESSION_OPTIONS = stt_pb2.StreamingOptions(
 )
 
 
-# ---------------------------------------------
-
-
 async def generate_requests(audio_stream):
-    """
-    Генератор, который сначала отправляет сообщение с конфигурацией,
-    а затем отправляет аудио-чанки из потока.
-    """
     yield stt_pb2.StreamingRequest(session_options=SESSION_OPTIONS)
 
     async for chunk in audio_stream:
         yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
 
 
-async def recognize(audio_stream):
-    """
-    Основная функция, которая устанавливает соединение с Yandex SpeechKit,
-    отправляет аудиопоток и асинхронно возвращает результаты распознавания.
-    """
-    credentials = grpc.ssl_channel_credentials()
-    async with grpc.aio.secure_channel("stt.api.cloud.yandex.net:443", credentials) as channel:
-        stub = stt_service_pb2_grpc.RecognizerStub(channel)
+async def recognize_stream(audio_stream):
+    request_generator = generate_requests(audio_stream)
+    responses = recognizer_stub.RecognizeStreaming(request_generator)
 
-        metadata = [("authorization", f"Api-Key {API_KEY}")]
+    try:
+        async for response in responses:
+            event_type = response.WhichOneof('Event')
 
-        stream = stub.RecognizeStreaming(generate_requests(audio_stream), metadata=metadata)
+            if event_type == 'partial' and len(response.partial.alternatives) > 0:
+                yield {"type": "partial", "text": response.partial.alternatives[0].text}
 
-        try:
-            async for response in stream:
-                event_type = response.WhichOneof('Event')
+            elif event_type == 'final' and len(response.final.alternatives) > 0:
+                yield {"type": "final", "text": response.final.alternatives[0].text}
 
-                # --- ИСПРАВЛЕННЫЙ БЛОК С ПРОВЕРКОЙ ---
-                if event_type == 'partial' and len(response.partial.alternatives) > 0:
-                    yield {"type": "partial", "text": response.partial.alternatives[0].text}
+            elif event_type == 'final_refinement' and len(response.final_refinement.normalized_text.alternatives) > 0:
+                yield {"type": "final_refinement",
+                       "text": response.final_refinement.normalized_text.alternatives[0].text}
 
-                elif event_type == 'final' and len(response.final.alternatives) > 0:
-                    yield {"type": "final", "text": response.final.alternatives[0].text}
-
-                elif event_type == 'final_refinement' and len(
-                        response.final_refinement.normalized_text.alternatives) > 0:
-                    yield {"type": "final_refinement",
-                           "text": response.final_refinement.normalized_text.alternatives[0].text}
-                # ----------------------------------------
-
-        except asyncio.CancelledError:
-            print("Распознавание прервано клиентом.")
-        except grpc.aio.AioRpcError as e:
-            print(f"Ошибка gRPC: {e.details()}")
-            yield {"type": "error", "text": f"Ошибка сервера распознавания: {e.details()}"}
+    except asyncio.CancelledError:
+        print("Распознавание прервано.")
+    except grpc.aio.AioRpcError as e:
+        print(f"Ошибка gRPC в STT сервисе: {e.details()}")
+        yield {"type": "error", "text": f"Ошибка сервера распознавания: {e.details()}"}
