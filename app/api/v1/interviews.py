@@ -3,18 +3,69 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.api.dependencies import get_db
-# Импортируем зависимость, которую мы создали в `applications.py`
 from app.api.v1.applications import get_current_candidate_user
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import InterviewSessionStartOut
-
 import base64
 from fastapi import WebSocket, WebSocketDisconnect
 from app.services.interview_director import InterviewDirector
-from app.services.stt_service import STTService
-# TODO Предполагаем, что STT сервис будет импортироваться так
+from app.services import stt_service
 
 router = APIRouter()
+
+
+async def audio_stream_from_websocket(websocket: WebSocket):
+    try:
+        while True:
+            yield await websocket.receive_bytes()
+    except WebSocketDisconnect:
+        print("Клиент отключился, генератор аудиопотока завершает работу.")
+        return
+
+
+@router.websocket("/ws/{session_id}")
+async def websocket_endpoint(
+        websocket: WebSocket,
+        session_id: int,
+        db: Session = Depends(get_db)
+):
+    await websocket.accept()
+    director = InterviewDirector(session_id=session_id, db=db)
+
+    try:
+        audio_data, text = await director.start()
+        if audio_data:
+            audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+            await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
+
+        audio_generator = audio_stream_from_websocket(websocket)
+
+        full_candidate_response = ""
+        async for result in stt_service.recognize_stream(audio_generator):
+            await websocket.send_json(result)
+
+            if result.get("type") in ["final", "final_refinement"]:
+                full_candidate_response += result.get("text", "") + " "
+
+            if result.get("type") == "final":
+                clean_response = full_candidate_response.strip()
+                if clean_response:
+                    audio_data, text = await director.handle_candidate_response(clean_response)
+                    if audio_data:
+                        audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+                        await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
+
+                    full_candidate_response = ""
+
+    except WebSocketDisconnect:
+        print(f"Клиент отключился от сессии {session_id}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Необработанная ошибка в сессии {session_id}: {e}")
+        await websocket.close(code=1011, reason=str(e))
+    finally:
+        print(f"Соединение для сессии {session_id} закрыто.")
 
 
 @router.post(
@@ -52,18 +103,14 @@ async def websocket_endpoint(
 ):
     await websocket.accept()
 
-    # 1. Инициализация
     director = InterviewDirector(session_id=session_id, db=db)
-    stt_service = STTService()  # Создаем экземпляр STT
+    stt_service = STTService()
 
     print(f"WebSocket connection accepted for session {session_id}")
 
     try:
-        # 2. Начало интервью
-        # Директор генерирует приветствие, мы отправляем его клиенту
         audio_data, text = await director.start()
 
-        # Отправляем аудио в base64, чтобы его легко было обработать в JSON
         audio_b64 = base64.b64encode(audio_data).decode('utf-8')
         await websocket.send_json({
             "type": "avatar_speech",
@@ -71,9 +118,6 @@ async def websocket_endpoint(
             "audio_b64": audio_b64
         })
 
-        # 3. Основной цикл: слушаем кандидата -> распознаем -> отвечаем
-        # recognize_stream должен быть асинхронным генератором,
-        # который принимает websocket и yield'ует распознанный текст
         async for recognized_text in stt_service.recognize_stream(websocket):
             if recognized_text:
                 print(f"Recognized text: '{recognized_text}'")

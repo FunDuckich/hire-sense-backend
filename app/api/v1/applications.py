@@ -10,6 +10,7 @@ from app.services import llm_service
 from app.models.application import ApplicationStatus
 
 
+# фоновая задача
 def run_resume_screening(application_id: int, db: Session):
     print(f"Запуск AI-скрининга для заявки #{application_id}...")
 
@@ -41,7 +42,7 @@ def run_resume_screening(application_id: int, db: Session):
 
     if not analysis_result:
         print(f"Ошибка: не удалось проанализировать резюме для заявки #{application_id}.")
-        app_repo.update_application_status(application_id, ApplicationStatus.REJECTED)  # Или какой-то статус ошибки
+        app_repo.update_application_status(application_id, ApplicationStatus.REJECTED)
         return
 
     screening_repo.create_screening_result(application_id, analysis_result)
