@@ -1,30 +1,40 @@
 import time
 import json
+from datetime import datetime
+
 import requests
 import jwt
-
+from typing import TypedDict
 from app.core.config import settings
 
-_iam_token_cache = {
+
+class IamTokenCache(TypedDict):
+    token: str | None
+    expires_at: int
+
+
+_iam_token_cache: IamTokenCache = {
     "token": None,
     "expires_at": 0
 }
 
 
 def get_iam_token() -> str:
-    now = int(time.time())
-    if _iam_token_cache["token"] is None or _iam_token_cache["expires_at"] <= now + 60:
+    """Получает IAM-токен, кеширует его и обновляет при необходимости."""
+    now_ts = int(time.time())
+    if _iam_token_cache["token"] is None or _iam_token_cache["expires_at"] <= now_ts + 60:
         print("Обновление IAM-токена...")
         try:
-            with open("authorized_key.json", 'r') as key_file:
+            with open("authorized_key.json", 'r', encoding='utf-8') as key_file:
                 private_key_data = json.load(key_file)
                 private_key = private_key_data["private_key"]
 
+            now_jwt = int(time.time())
             payload = {
                 'aud': 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
                 'iss': settings.YC_SERVICE_ACCOUNT_ID,
-                'iat': now,
-                'exp': now + 3600
+                'iat': now_jwt,
+                'exp': now_jwt + 3600
             }
 
             encoded_token = jwt.encode(
@@ -41,19 +51,30 @@ def get_iam_token() -> str:
             response.raise_for_status()
             result = response.json()
 
-            _iam_token_cache["token"] = result["iamToken"]
+            iam_token = result.get("iamToken")
+            expires_at_str = result.get("expiresAt")
 
-            token_payload = jwt.decode(result["iamToken"], options={"verify_signature": False})
-            _iam_token_cache["expires_at"] = token_payload.get("exp", 0)
+            if not iam_token or not expires_at_str:
+                raise ValueError("Invalid response from IAM API")
+
+            # --- ПРАВИЛЬНЫЙ СПОСОБ ПОЛУЧЕНИЯ ВРЕМЕНИ ЖИЗНИ ---
+            # Парсим строку времени и переводим в Unix timestamp
+            expires_at_dt = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+            expires_at_ts = int(expires_at_dt.timestamp())
+
+            _iam_token_cache["token"] = iam_token
+            _iam_token_cache["expires_at"] = expires_at_ts
             print("IAM-токен успешно обновлен.")
 
         except Exception as e:
             print(f"Ошибка получения IAM-токена: {e}")
-            if _iam_token_cache["token"]:
-                return _iam_token_cache["token"]
-            raise
+            raise IOError("Could not retrieve IAM token") from e
 
-    return _iam_token_cache["token"]
+    token = _iam_token_cache["token"]
+    if token is None:
+        raise ValueError("Cached IAM token is None")
+
+    return token
 
 
 def call_yandex_gpt(system_prompt: str, user_prompt: str, temperature: float = 0.3) -> str | None:
@@ -143,8 +164,19 @@ def analyze_resume(vacancy_details: dict, resume_md: str) -> dict | None:
         return None
 
     try:
-        return json.loads(response_text)
+        clean_response = response_text.strip()
+
+        if clean_response.startswith("```json"):
+            clean_response = clean_response[7:]
+        if clean_response.startswith("```"):
+            clean_response = clean_response[3:]
+
+        if clean_response.endswith("```"):
+            clean_response = clean_response[:-3]
+
+        return json.loads(clean_response)
+
     except json.JSONDecodeError as e:
         print(f"Ошибка парсинга JSON из ответа LLM: {e}")
-        print(f"Полученный ответ: {response_text}")
+        print(f"Полученный ответ (до очистки): {response_text}")
         return None

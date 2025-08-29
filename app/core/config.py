@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     YC_SERVICE_ACCOUNT_ID: str
     YC_KEY_ID: str
+    YC_FOLDER_ID: str
 
     model_config = SettingsConfigDict(env_file=".env")
 

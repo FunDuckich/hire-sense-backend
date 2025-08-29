@@ -1,25 +1,59 @@
-import time
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
-
 from app.models.user import User
 from app.api.dependencies import get_db, get_current_user
 from app.repositories.application_repository import ApplicationRepository
 from app.services.resume_parser import parse_resume
+from app.repositories.vacancy_repository import VacancyRepository
+from app.repositories.screening_repository import ScreeningRepository
+from app.services import llm_service
+from app.models.application import ApplicationStatus
 
 
-# Функция для фоновой задачи
 def run_resume_screening(application_id: int, db: Session):
-    print(f"Запуск скрининга для заявки #{application_id}...")
-    time.sleep(10)  # Имитация работы AI
+    print(f"Запуск AI-скрининга для заявки #{application_id}...")
 
-    # Здесь в будущем будет реальная логика
-    # А пока просто выводим в консоль
     app_repo = ApplicationRepository(db)
-    # ... (здесь мог бы быть вызов get_application_by_id)
+    screening_repo = ScreeningRepository(db)
+    vacancy_repo = VacancyRepository(db)
 
-    print(f"Скрининг для заявки #{application_id} завершен!")
-    # Здесь будет вызов email_service.send_screening_result(...)
+    application = app_repo.get_application_by_id(application_id)
+    if not application:
+        print(f"Ошибка: заявка #{application_id} не найдена.")
+        return
+
+    vacancy = vacancy_repo.get_vacancy(application.vacancy_id)
+    if not vacancy:
+        print(f"Ошибка: вакансия #{application.vacancy_id} не найдена.")
+        return
+
+    vacancy_details = {
+        "job_title": vacancy.job_title,
+        "required_experience": vacancy.required_experience,
+        "hard_skills": vacancy.hard_skills,
+        "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in vacancy.evaluation_criteria]
+    }
+
+    analysis_result = llm_service.analyze_resume(
+        vacancy_details=vacancy_details,
+        resume_md=application.resume_md
+    )
+
+    if not analysis_result:
+        print(f"Ошибка: не удалось проанализировать резюме для заявки #{application_id}.")
+        app_repo.update_application_status(application_id, ApplicationStatus.REJECTED)  # Или какой-то статус ошибки
+        return
+
+    screening_repo.create_screening_result(application_id, analysis_result)
+
+    score = analysis_result.get("overall_match_score", 0)
+    screening_threshold = 60  # пока хардкодим, потом можно будет брать из вакансии
+
+    new_status = ApplicationStatus.INTERVIEW_PENDING if score >= screening_threshold else ApplicationStatus.REJECTED
+    app_repo.update_application_status(application_id, new_status)
+
+    # 5. TODO: Отправить email-уведомление кандидату
+    print(f"Скрининг для заявки #{application_id} завершен! Результат: {score}%, Статус: {new_status.value}")
 
 
 router = APIRouter()
