@@ -54,3 +54,26 @@ def get_iam_token() -> str:
             raise
 
     return _iam_token_cache["token"]
+
+class MockLLMService:
+    def __init__(self):
+        self.responses = [
+            "Понятно, спасибо. А расскажите подробнее о вашем опыте с Python.",
+            "Очень интересно. Можете привести конкретный пример из проекта?",
+            "Хорошо. А как вы решали конфликты в команде?",
+            "Принято. Какие ваши ожидания по заработной плате?",
+            "Спасибо за ваши ответы. На этом у меня все. Мы с вами свяжемся."
+        ]
+        self.current_index = 0
+
+    async def get_next_response(self, history: list[dict]) -> str:
+        """
+        Возвращает следующий ответ из списка.
+        `history` пока не используется, но понадобится для реального LLM.
+        """
+        if self.current_index < len(self.responses):
+            response = self.responses[self.current_index]
+            self.current_index += 1
+            return response
+        else:
+            return "К сожалению, мои вопросы закончились. Спасибо за интервью!"
