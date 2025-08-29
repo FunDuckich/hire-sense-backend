@@ -20,6 +20,7 @@ class Vacancy(Base):
     what_we_offer = Column(Text)
 
     evaluation_criteria = relationship("EvaluationCriterion", back_populates="vacancy")
+    applications = relationship("Application", back_populates="vacancy")
 
 
 class EvaluationCriterion(Base):
