@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Text, Enum, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, Text, Enum, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -26,3 +26,4 @@ class Application(Base):
     # Связи
     candidate = relationship("User", back_populates="applications")
     vacancy = relationship("Vacancy", back_populates="applications")
+    interview_session = relationship("InterviewSession", uselist=False, back_populates="application")
