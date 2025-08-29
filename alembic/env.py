@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.vacancy import Vacancy, EvaluationCriterion
 from app.models.application import Application
 from app.models.interview import InterviewSession, InterviewTranscript
+from app.models.screening import ApplicationScreeningResult
 
 import os
 import sys

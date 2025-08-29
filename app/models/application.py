@@ -27,3 +27,4 @@ class Application(Base):
     candidate = relationship("User", back_populates="applications")
     vacancy = relationship("Vacancy", back_populates="applications")
     interview_session = relationship("InterviewSession", uselist=False, back_populates="application")
+    screening_result = relationship("ApplicationScreeningResult", uselist=False, back_populates="application")
