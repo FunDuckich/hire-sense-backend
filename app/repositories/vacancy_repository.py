@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.models.vacancy import Vacancy, EvaluationCriterion
-from app.schemas.vacancy import VacancyCreate
+from app.schemas.vacancy import VacancyCreate, VacancyUpdate
 
 
 class VacancyRepository:
@@ -31,3 +31,30 @@ class VacancyRepository:
     def get_all_vacancies(self) -> list[Vacancy]:
         statement = select(Vacancy).options(joinedload(Vacancy.evaluation_criteria))
         return self.db.execute(statement).unique().scalars().all()
+
+    def update_vacancy(self, vacancy_id: int, vacancy_data: VacancyUpdate) -> Vacancy | None:
+        db_vacancy = self.get_vacancy(vacancy_id=vacancy_id)
+        if not db_vacancy:
+            return None
+
+        update_data = vacancy_data.model_dump(exclude_unset=True)
+
+        for key, value in update_data.items():
+            setattr(db_vacancy, key, value)
+
+        self.db.add(db_vacancy)
+        self.db.commit()
+        self.db.refresh(db_vacancy)
+        return db_vacancy
+
+    def delete_vacancy(self, vacancy_id: int) -> Vacancy | None:
+        db_vacancy = self.get_vacancy(vacancy_id=vacancy_id)
+        if not db_vacancy:
+            return None
+
+        for criterion in db_vacancy.evaluation_criteria:
+            self.db.delete(criterion)
+
+        self.db.delete(db_vacancy)
+        self.db.commit()
+        return db_vacancy

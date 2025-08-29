@@ -41,3 +41,19 @@ class VacancyOut(VacancyBase):
 
     class Config:
         from_attributes = True
+
+
+class VacancyUpdate(BaseModel):
+    job_title: str | None = None
+    company_name: str | None = None
+    location: str | None = None
+    salary_range: str | None = None
+    key_responsibilities: str | None = None
+    tech_stack: str | None = None
+    required_experience: str | None = None
+    hard_skills: str | None = None
+    soft_skills: str | None = None
+    education: str | None = None
+    what_we_offer: str | None = None
+    # обновление критериев - более сложная логика, пока оставим
+    # evaluation_criteria: list[EvaluationCriterionCreate] | None = None
