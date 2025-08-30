@@ -35,5 +35,3 @@ class EvaluationCriterion(Base):
     vacancy_id = Column(Integer, ForeignKey("vacancies.id"), nullable=False)
 
     vacancy = relationship("Vacancy", back_populates="evaluation_criteria")
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    owner = relationship("User", back_populates="vacancies")
