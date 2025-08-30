@@ -55,3 +55,10 @@ class VacancyRepository:
         self.db.delete(db_vacancy)
         self.db.commit()
         return db_vacancy
+
+    def get_vacancies_by_owner(self, owner_id: int) -> list[Vacancy]:
+        statement = select(Vacancy).options(
+            joinedload(Vacancy.evaluation_criteria)
+        ).where(Vacancy.owner_id == owner_id)
+
+        return self.db.execute(statement).unique().scalars().all()
