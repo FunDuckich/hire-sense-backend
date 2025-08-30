@@ -180,3 +180,62 @@ def analyze_resume(vacancy_details: dict, resume_md: str) -> dict | None:
         print(f"Ошибка парсинга JSON из ответа LLM: {e}")
         print(f"Полученный ответ (до очистки): {response_text}")
         return None
+
+
+# --- Interview Dialogue Logic ---
+
+def get_interview_response(
+        history: list[dict],
+        vacancy_details: dict,
+        resume_summary: dict
+) -> str | None:
+    """
+    Генерирует следующий вопрос или реплику AI-интервьюера на основе контекста.
+    """
+
+    # 1. Формируем системный промпт (роль и правила)
+    system_prompt = (
+        "Ты — HR-аватар по имени Алекс. Твоя задача — провести первичное собеседование на IT-вакансию. "
+        "Будь профессионален, вежлив и дружелюбен. Задавай по ОДНОМУ вопросу за раз. "
+        "Твоя цель — раскрыть опыт кандидата и его соответствие ключевым требованиям. "
+        "Задавай открытые вопросы, которые требуют развернутого ответа. "
+        "Если кандидат отвечает коротко, задай уточняющий вопрос по той же теме. "
+        "Не повторяй вопросы, которые уже были в диалоге."
+    )
+
+    # 2. Формируем пользовательский промпт (контекст и задача на текущий ход)
+    # Преобразуем словари в красивые JSON-строки для передачи в промпт
+    vacancy_context = json.dumps(vacancy_details, ensure_ascii=False, indent=2)
+    resume_context = json.dumps(resume_summary, ensure_ascii=False, indent=2)
+
+    user_prompt = f"""
+    Вот информация о вакансии:
+    --- VACANCY INFO ---
+    {vacancy_context}
+    --- END VACANCY INFO ---
+
+    Вот краткая выжимка из резюме кандидата и вопросы, которые нужно было уточнить:
+    --- RESUME SUMMARY ---
+    {resume_context}
+    --- END RESUME SUMMARY ---
+
+    Вот текущая история нашего диалога:
+    --- DIALOGUE HISTORY ---
+    {json.dumps(history, ensure_ascii=False, indent=2)}
+    --- END DIALOGUE HISTORY ---
+
+    ЗАДАЧА: На основе всей этой информации сгенерируй СЛЕДУЮЩИЙ ОДИН вопрос или реплику для кандидата.
+    Твой ответ должен быть только текстом вопроса. Без лишних слов, вроде "Хорошо, следующий вопрос:".
+    """
+
+    # 3. Вызываем YandexGPT
+    print("Отправка запроса на генерацию вопроса для интервью в YandexGPT...")
+
+    # Для генерации вопросов можно использовать чуть более "творческую" температуру
+    response_text = call_yandex_gpt(system_prompt, user_prompt, temperature=0.5)
+
+    if not response_text:
+        # В случае ошибки возвращаем "запасной" вопрос
+        return "Извините, у меня возникла небольшая техническая проблема. Давайте продолжим. Расскажите о вашем последнем проекте."
+
+    return response_text.strip()
