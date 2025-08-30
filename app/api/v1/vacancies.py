@@ -18,7 +18,9 @@ def create_vacancy(
 
 ):
     vacancy_repo = VacancyRepository(db)
-    return vacancy_repo.create_vacancy(vacancy_data=vacancy_in)
+    return vacancy_repo.create_vacancy(
+        vacancy_data=vacancy_in, owner_id=current_user.id
+    )
 
 
 @router.get("/", response_model=List[VacancyOut])

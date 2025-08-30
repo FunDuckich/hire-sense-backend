@@ -19,3 +19,4 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(Role), nullable=False)
     applications = relationship("Application", back_populates="candidate")
+    vacancies = relationship("Vacancy", back_populates="owner")

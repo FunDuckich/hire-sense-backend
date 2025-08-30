@@ -19,8 +19,11 @@ class Vacancy(Base):
     education = Column(String)
     what_we_offer = Column(Text)
 
-    evaluation_criteria = relationship("EvaluationCriterion", back_populates="vacancy")
-    applications = relationship("Application", back_populates="vacancy")
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner = relationship("User", back_populates="vacancies")
+
+    evaluation_criteria = relationship("EvaluationCriterion", back_populates="vacancy", cascade="all, delete-orphan")
+    applications = relationship("Application", back_populates="vacancy", cascade="all, delete-orphan")
 
 
 class EvaluationCriterion(Base):
@@ -31,5 +34,6 @@ class EvaluationCriterion(Base):
     weight = Column(Integer, nullable=False)
     vacancy_id = Column(Integer, ForeignKey("vacancies.id"), nullable=False)
 
-    # Связь "многие к одному" с вакансией
     vacancy = relationship("Vacancy", back_populates="evaluation_criteria")
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner = relationship("User", back_populates="vacancies")
