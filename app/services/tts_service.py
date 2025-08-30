@@ -7,14 +7,6 @@ TTS_URL = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
 
 def synthesize_speech(text: str, voice: str = "alexander", speed: float = 1.0) -> bytes | None:
-    """
-    Синтезирует речь из текста с помощью Yandex SpeechKit REST API v3.
-
-    :param text: Текст для синтеза.
-    :param voice: Голос (например, 'alexander', 'alena', 'filipp', 'oksana_sad').
-    :param speed: Скорость речи (от 0.1 до 3.0).
-    :return: Аудиоданные в формате OggOpus или None в случае ошибки.
-    """
     if not text:
         return None
 

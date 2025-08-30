@@ -3,7 +3,6 @@ import grpc
 import json
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
-from app.core.config import settings
 import yandexcloud
 
 try:

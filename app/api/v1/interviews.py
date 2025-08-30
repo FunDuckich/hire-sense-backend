@@ -44,7 +44,6 @@ def start_interview_session(
 
 
 async def audio_stream_from_websocket(websocket: WebSocket):
-    """Асинхронный генератор, который читает аудио-байты из WebSocket."""
     try:
         while True:
             yield await websocket.receive_bytes()
@@ -63,13 +62,11 @@ async def websocket_endpoint(
     director = InterviewDirector(session_id=session_id, db=db)
 
     try:
-        # 1. Начало интервью
         audio_data, text = await director.start()
         if audio_data:
             audio_b64 = base64.b64encode(audio_data).decode('utf-8')
             await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
 
-        # 2. Основной цикл
         audio_generator = audio_stream_from_websocket(websocket)
 
         full_candidate_response = ""

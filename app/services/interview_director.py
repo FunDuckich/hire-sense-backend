@@ -25,10 +25,8 @@ class InterviewDirector:
         self._initialize_history()
 
     def _load_context(self):
-        """Загружает из БД контекст для ведения диалога: детали вакансии и результат скрининга."""
         print(f"[Director] Загрузка контекста для сессии {self.session_id}...")
 
-        # Получаем сессию со всеми связанными сущностями одним запросом
         session = self.interview_repo.get_session_with_details(self.session_id)
 
         if not session:
@@ -38,7 +36,6 @@ class InterviewDirector:
         if not application:
             raise ValueError("С сессией не связана заявка (application).")
 
-        # 1. Собираем детали вакансии
         vacancy = application.vacancy
         if vacancy:
             self.vacancy_details = {
@@ -48,10 +45,8 @@ class InterviewDirector:
                 "evaluation_criteria": [{"criterion": c.criterion} for c in vacancy.evaluation_criteria]
             }
 
-        # 2. Собираем результат скрининга резюме
         screening_result = application.screening_result
         if screening_result and screening_result.result_json:
-            # result_json может быть строкой или dict, приводим к dict
             result_data = screening_result.result_json
             if isinstance(result_data, str):
                 try:
@@ -65,18 +60,8 @@ class InterviewDirector:
             }
         print("[Director] Контекст успешно загружен.")
 
-    def _initialize_history(self):
-        """Задает начальный системный промпт."""
-        # Системный промпт теперь находится внутри llm_service,
-        # здесь его можно убрать или оставить для внутренней логики
-        pass  # История будет формироваться динамически
-
     async def start(self) -> tuple[bytes | None, str]:
-        """Начинает интервью с персонализированного вопроса."""
         print(f"[Director] Начинаем интервью для сессии {self.session_id}")
-
-        # --- НОВАЯ ЛОГИКА: УМНОЕ НАЧАЛО ---
-        # Берем первый "рекомендованный" вопрос из скрининга резюме
         initial_questions = self.resume_summary.get("questions_to_ask", [])
         if initial_questions:
             first_question = initial_questions[0]
@@ -89,7 +74,6 @@ class InterviewDirector:
         )
         self.dialogue_history.append({"role": "assistant", "content": greeting_text})
 
-        # Синтезируем речь
         import asyncio
         loop = asyncio.get_running_loop()
         audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, greeting_text)
@@ -97,17 +81,13 @@ class InterviewDirector:
         return audio_data, greeting_text
 
     async def handle_candidate_response(self, text: str) -> tuple[bytes | None, str]:
-        """Обрабатывает ответ кандидата и генерирует следующий вопрос с помощью LLM."""
         print(f"[Director] Обработка ответа кандидата: '{text}'")
 
-        # 1. Сохраняем реплику кандидата
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.CANDIDATE, message=text
         )
         self.dialogue_history.append({"role": "user", "content": text})
 
-        # 2. --- ЗАМЕНА MOCK НА РЕАЛЬНЫЙ ВЫЗОВ ---
-        # Оборачиваем синхронный вызов LLM в run_in_threadpool
         import asyncio
         loop = asyncio.get_running_loop()
         next_question = await loop.run_in_executor(
@@ -118,18 +98,16 @@ class InterviewDirector:
             self.resume_summary
         )
 
-        if not next_question:  # Обработка ошибки от LLM
+        if not next_question:
             next_question = "Понятно, спасибо. Давайте перейдем к следующему вопросу."
 
         print(f"[Director] Ответ LLM: '{next_question}'")
 
-        # 3. Сохраняем реплику аватара
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.AVATAR, message=next_question
         )
         self.dialogue_history.append({"role": "assistant", "content": next_question})
 
-        # 4. Синтезируем речь
         audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, next_question)
 
         return audio_data, next_question

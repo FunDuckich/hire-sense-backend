@@ -20,7 +20,6 @@ _iam_token_cache: IamTokenCache = {
 
 
 def get_iam_token() -> str:
-    """Получает IAM-токен, кеширует его и обновляет при необходимости."""
     now_ts = int(time.time())
     if _iam_token_cache["token"] is None or _iam_token_cache["expires_at"] <= now_ts + 60:
         print("Обновление IAM-токена...")
@@ -57,8 +56,6 @@ def get_iam_token() -> str:
             if not iam_token or not expires_at_str:
                 raise ValueError("Invalid response from IAM API")
 
-            # --- ПРАВИЛЬНЫЙ СПОСОБ ПОЛУЧЕНИЯ ВРЕМЕНИ ЖИЗНИ ---
-            # Парсим строку времени и переводим в Unix timestamp
             expires_at_dt = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
             expires_at_ts = int(expires_at_dt.timestamp())
 
@@ -182,18 +179,11 @@ def analyze_resume(vacancy_details: dict, resume_md: str) -> dict | None:
         return None
 
 
-# --- Interview Dialogue Logic ---
-
 def get_interview_response(
         history: list[dict],
         vacancy_details: dict,
         resume_summary: dict
 ) -> str | None:
-    """
-    Генерирует следующий вопрос или реплику AI-интервьюера на основе контекста.
-    """
-
-    # 1. Формируем системный промпт (роль и правила)
     system_prompt = (
         "Ты — HR-аватар по имени Алекс. Твоя задача — провести первичное собеседование на IT-вакансию. "
         "Будь профессионален, вежлив и дружелюбен. Задавай по ОДНОМУ вопросу за раз. "
@@ -203,8 +193,6 @@ def get_interview_response(
         "Не повторяй вопросы, которые уже были в диалоге."
     )
 
-    # 2. Формируем пользовательский промпт (контекст и задача на текущий ход)
-    # Преобразуем словари в красивые JSON-строки для передачи в промпт
     vacancy_context = json.dumps(vacancy_details, ensure_ascii=False, indent=2)
     resume_context = json.dumps(resume_summary, ensure_ascii=False, indent=2)
 
@@ -228,14 +216,11 @@ def get_interview_response(
     Твой ответ должен быть только текстом вопроса. Без лишних слов, вроде "Хорошо, следующий вопрос:".
     """
 
-    # 3. Вызываем YandexGPT
     print("Отправка запроса на генерацию вопроса для интервью в YandexGPT...")
 
-    # Для генерации вопросов можно использовать чуть более "творческую" температуру
     response_text = call_yandex_gpt(system_prompt, user_prompt, temperature=0.5)
 
     if not response_text:
-        # В случае ошибки возвращаем "запасной" вопрос
         return "Извините, у меня возникла небольшая техническая проблема. Давайте продолжим. Расскажите о вашем последнем проекте."
 
     return response_text.strip()
