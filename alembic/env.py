@@ -11,27 +11,20 @@ from app.models.vacancy import Vacancy, EvaluationCriterion
 from app.models.application import Application
 from app.models.interview import InterviewSession, InterviewTranscript
 from app.models.screening import ApplicationScreeningResult
+from app.models.report import InterviewReport
 
 import os
 import sys
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 from app.core.database import Base
-from app.models.user import User  # Импортируем все наши модели
-
-# ... импорты других моделей будут здесь
+from app.models.user import User
 
 target_metadata = Base.metadata
 

@@ -126,3 +126,8 @@ class InterviewDirector:
         audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, next_question)
 
         return audio_data, next_question
+
+    async def end_interview(self):
+        print(f"[Director] Ending interview for session {self.session_id}")
+        # TODO Здесь можно добавить логику обновления статуса сессии на COMPLETED
+        pass

@@ -224,3 +224,76 @@ def get_interview_response(
         return "Извините, у меня возникла небольшая техническая проблема. Давайте продолжим. Расскажите о вашем последнем проекте."
 
     return response_text.strip()
+
+
+def analyze_interview_transcript(
+        transcript: str,
+        vacancy_details: dict,
+        screening_report: dict
+) -> dict | None:
+    system_prompt = (
+        "Ты — ведущий HR-эксперт с 15-летним опытом в IT-рекрутинге. "
+        "Твоя задача — провести глубокий и объективный анализ записи собеседования. "
+        "Проанализируй диалог между AI-аватаром и кандидатом. Оцени ответы кандидата по ключевым компетенциям, "
+        "приводя в качестве доказательств его цитаты. "
+        "Сформируй итоговый балл, краткое саммари, сильные и слабые стороны и дай четкую рекомендацию. "
+        "Твой ответ ДОЛЖЕН БЫТЬ ТОЛЬКО в формате валидного JSON-объекта. "
+        "Не используй разметку Markdown, вводные фразы или любые символы до или после JSON-объекта."
+    )
+
+    user_prompt = f"""
+    Проанализируй транскрипцию интервью и верни JSON по следующей структуре:
+    {{
+      "overall_score": <number, итоговый балл от 0 до 100>,
+      "summary": "<string, общее впечатление о кандидате в 3-4 предложениях>",
+      "competency_analysis": [
+        {{
+          "criterion": "<название критерия из вакансии>",
+          "score": <number, оценка по этому критерию от 0 до 10>,
+          "assessment": "<string, детальное обоснование оценки с примерами и цитатами из диалога>"
+        }}
+      ],
+      "strengths": ["<список из 2-3 ключевых сильных сторон кандидата>"],
+      "weaknesses": ["<список из 2-3 зон для роста или выявленных пробелов>"],
+      "recommendation": "<'Рекомендуем к следующему этапу' | 'Отказ' | 'Требуется дополнительная проверка'>"
+    }}
+
+    КОНТЕКСТ ДЛЯ АНАЛИЗА:
+
+    1. Требования вакансии:
+    ---
+    {json.dumps(vacancy_details, ensure_ascii=False, indent=2)}
+    ---
+
+    2. Первичный анализ резюме (для справки):
+    ---
+    {json.dumps(screening_report, ensure_ascii=False, indent=2)}
+    ---
+
+    3. Полная транскрипция собеседования:
+    ---
+    {transcript}
+    ---
+    """
+
+    print("Отправка запроса на финальный анализ интервью в YandexGPT...")
+    response_text = call_yandex_gpt(system_prompt, user_prompt, temperature=0.2)
+
+    if not response_text:
+        return None
+
+    try:
+        clean_response = response_text.strip()
+        if clean_response.startswith("```json"):
+            clean_response = clean_response[7:]
+        if clean_response.startswith("```"):
+            clean_response = clean_response[3:]
+        if clean_response.endswith("```"):
+            clean_response = clean_response[:-3]
+
+        return json.loads(clean_response)
+
+    except json.JSONDecodeError as e:
+        print(f"Ошибка парсинга JSON из ответа LLM при анализе интервью: {e}")
+        print(f"Полученный ответ (до очистки): {response_text}")
+        return None
