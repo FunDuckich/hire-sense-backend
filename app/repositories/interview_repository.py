@@ -1,8 +1,9 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.models.interview import InterviewSession, InterviewStatus, InterviewTranscript, TranscriptRole
 from app.models.application import Application
 from app.models.vacancy import Vacancy
-from app.models.screening import ApplicationScreeningResult
+from app.models.user import User 
 
 
 class InterviewRepository:
@@ -45,3 +46,22 @@ class InterviewRepository:
             joinedload(InterviewSession.application).
             joinedload(Application.screening_result)
         ).filter(InterviewSession.id == session_id).first()
+
+    def get_session_with_details(self, session_id: int) -> InterviewSession | None:
+        """
+        Получает сессию интервью со всеми связанными данными,
+        необходимыми для построения контекста.
+        """
+        statement = select(InterviewSession).options(
+            # Загружаем связанную заявку
+            joinedload(InterviewSession.application).options(
+                # Внутри заявки загружаем...
+                joinedload(Application.candidate),  # ...данные кандидата
+                joinedload(Application.vacancy).options(  # ...данные вакансии
+                    joinedload(Vacancy.evaluation_criteria)  # ...и ее критерии
+                ),
+                joinedload(Application.screening_result)  # ...и результат скрининга
+            )
+        ).where(InterviewSession.id == session_id)
+
+        return self.db.execute(statement).unique().scalar_one_or_none()
