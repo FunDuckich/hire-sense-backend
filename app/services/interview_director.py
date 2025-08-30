@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from app.models.interview import TranscriptRole
 from app.repositories.interview_repository import InterviewRepository
-from app.services import tts_service, llm_service
-
+from app.services import tts_service
+import asyncio
 
 class MockLLMService:
     async def get_next_response(self, history: list) -> str:
@@ -23,7 +23,7 @@ class InterviewDirector:
         self.session_id = session_id
         self.db = db
         self.interview_repo = InterviewRepository(db)
-        self.llm_service = MockLLMService()  # Используем нашу заглушку
+        self.llm_service = MockLLMService()
         self.dialogue_history = []
         self._initialize_history()
 
@@ -39,9 +39,8 @@ class InterviewDirector:
         )
         self.dialogue_history.append({"role": "assistant", "content": greeting_text})
 
-        # --- ИСПРАВЛЕННЫЙ ВЫЗОВ TTS ---
-        # Теперь это не асинхронный вызов, а синхронный, как и был в коде BE2
-        audio_data = tts_service.synthesize_speech_rest_v3(greeting_text)
+        loop = asyncio.get_running_loop()
+        audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, greeting_text)
 
         return audio_data, greeting_text
 
@@ -58,6 +57,7 @@ class InterviewDirector:
         )
         self.dialogue_history.append({"role": "assistant", "content": next_question})
 
-        audio_data = tts_service.synthesize_speech_rest_v3(next_question)
+        loop = asyncio.get_running_loop()
+        audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, next_question)
 
         return audio_data, next_question
