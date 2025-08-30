@@ -20,7 +20,13 @@ class ApplicationRepository:
         return db_application
 
     def get_application_by_id(self, application_id: int) -> Application | None:
-        return self.db.query(Application).filter(Application.id == application_id).first()
+        statement = select(Application).options(
+            joinedload(Application.candidate),
+            joinedload(Application.vacancy),
+            joinedload(Application.screening_result)
+        ).where(Application.id == application_id)
+
+        return self.db.execute(statement).unique().scalar_one_or_none()
 
     def update_application_status(self, application_id: int, status: ApplicationStatus) -> Application | None:
         db_application = self.get_application_by_id(application_id)

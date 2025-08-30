@@ -10,7 +10,7 @@ from app.repositories.screening_repository import ScreeningRepository
 from app.services import llm_service
 from app.models.application import ApplicationStatus
 from app.api.dependencies import get_current_hr_user
-from app.schemas.application import ApplicationForHROut
+from app.schemas.application import ApplicationForHROut, ApplicationDetailsOut
 
 
 # фоновая задача
@@ -106,3 +106,24 @@ async def apply_for_vacancy(
     background_tasks.add_task(run_resume_screening, application.id, db)
 
     return {"message": "Your application has been accepted and is being processed."}
+
+
+@router.get("/applications/{application_id}", response_model=ApplicationDetailsOut)
+def read_application_details(
+        application_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    app_repo = ApplicationRepository(db)
+    application = app_repo.get_application_by_id(application_id=application_id)
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if application.vacancy.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this application")
+
+    if application.screening_result:
+        application.screening_result = application.screening_result.result_json
+
+    return application
