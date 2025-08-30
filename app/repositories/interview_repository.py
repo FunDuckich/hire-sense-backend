@@ -1,6 +1,8 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.interview import InterviewSession, InterviewStatus, InterviewTranscript, TranscriptRole
 from app.models.application import Application
+from app.models.vacancy import Vacancy
+from app.models.screening import ApplicationScreeningResult
 
 
 class InterviewRepository:
@@ -30,3 +32,16 @@ class InterviewRepository:
         self.db.commit()
         self.db.refresh(db_transcript_entry)
         return db_transcript_entry
+
+    def get_session_with_details(self, session_id: int) -> InterviewSession | None:
+        """
+        Получает сессию интервью и сразу подгружает все связанные данные,
+        необходимые для контекста диалога.
+        """
+        return self.db.query(InterviewSession).options(
+            joinedload(InterviewSession.application).
+            joinedload(Application.vacancy).
+            joinedload(Vacancy.evaluation_criteria),
+            joinedload(InterviewSession.application).
+            joinedload(Application.screening_result)
+        ).filter(InterviewSession.id == session_id).first()
