@@ -11,6 +11,7 @@ from app.services import llm_service
 from app.models.application import ApplicationStatus
 from app.api.dependencies import get_current_hr_user
 from app.schemas.application import ApplicationForHROut, ApplicationDetailsOut
+from app.services.email_service import email_service
 
 
 # фоновая задача
@@ -51,13 +52,18 @@ def run_resume_screening(application_id: int, db: Session):
     screening_repo.create_screening_result(application_id, analysis_result)
 
     score = analysis_result.get("overall_match_score", 0)
-    screening_threshold = 60  # пока хардкодим, потом можно будет брать из вакансии
+    screening_threshold = 60
 
     new_status = ApplicationStatus.INTERVIEW_PENDING if score >= screening_threshold else ApplicationStatus.REJECTED
-    app_repo.update_application_status(application_id, new_status)
+    updated_application = app_repo.update_application_status(application_id, new_status)
 
-    # 5. TODO: Отправить email-уведомление кандидату
     print(f"Скрининг для заявки #{application_id} завершен! Результат: {score}%, Статус: {new_status.value}")
+
+    if updated_application:
+        if new_status == ApplicationStatus.INTERVIEW_PENDING:
+            email_service.send_invitation_email(updated_application)
+        else:
+            email_service.send_rejection_email(updated_application)
 
 
 router = APIRouter()
