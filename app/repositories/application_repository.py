@@ -1,4 +1,5 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
 from app.models.application import Application, ApplicationStatus
 
 
@@ -29,3 +30,11 @@ class ApplicationRepository:
             self.db.commit()
             self.db.refresh(db_application)
         return db_application
+
+    def get_applications_for_vacancy(self, vacancy_id: int) -> list[Application]:
+        statement = select(Application).options(
+            joinedload(Application.candidate),
+            joinedload(Application.screening_result)
+        ).where(Application.vacancy_id == vacancy_id)
+
+        return self.db.execute(statement).unique().scalars().all()

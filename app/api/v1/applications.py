@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.user import User
@@ -8,6 +9,8 @@ from app.repositories.vacancy_repository import VacancyRepository
 from app.repositories.screening_repository import ScreeningRepository
 from app.services import llm_service
 from app.models.application import ApplicationStatus
+from app.api.dependencies import get_current_hr_user
+from app.schemas.application import ApplicationForHROut
 
 
 # фоновая задача
@@ -64,6 +67,23 @@ def get_current_candidate_user(current_user: User = Depends(get_current_user)) -
     if current_user.role != "CANDIDATE":
         raise HTTPException(status_code=403, detail="The user doesn't have enough privileges")
     return current_user
+
+
+@router.get("/vacancies/{vacancy_id}/applications", response_model=List[ApplicationForHROut])
+def read_applications_for_vacancy(
+        vacancy_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    vacancy_repo = VacancyRepository(db)
+    vacancy = vacancy_repo.get_vacancy(vacancy_id)
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    if vacancy.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access applications for this vacancy")
+
+    app_repo = ApplicationRepository(db)
+    return app_repo.get_applications_for_vacancy(vacancy_id=vacancy_id)
 
 
 @router.post("/vacancies/{vacancy_id}/apply", status_code=status.HTTP_202_ACCEPTED)

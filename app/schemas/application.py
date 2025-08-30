@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from .user import UserOut
 from .vacancy import VacancyOut
 from app.models.application import ApplicationStatus
+from .screening import ScreeningResultSummaryOut
 
 
 class ApplicationOut(BaseModel):
@@ -11,6 +12,16 @@ class ApplicationOut(BaseModel):
     created_at: datetime
     candidate: UserOut
     vacancy: VacancyOut
+
+    class Config:
+        from_attributes = True
+
+
+class ApplicationForHROut(BaseModel):
+    id: int
+    status: ApplicationStatus
+    candidate: UserOut
+    screening_result: ScreeningResultSummaryOut | None = None
 
     class Config:
         from_attributes = True
