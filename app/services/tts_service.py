@@ -1,16 +1,20 @@
 import requests
-from fastapi import HTTPException, status
 from app.core.config import settings
 from app.services.llm_service import get_iam_token
 
-TTS_URL = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
+def synthesize_speech(text: str) -> bytes | None:
+    """
+    Синтезирует речь из текста с помощью Yandex SpeechKit REST API v3.
+    Использует единый механизм получения IAM-токена.
+    """
+    url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
 
-def synthesize_speech(text: str, voice: str = "alexander", speed: float = 1.0) -> bytes | None:
-    if not text:
+    try:
+        iam_token = get_iam_token()
+    except Exception as e:
+        print(f"Ошибка получения IAM-токена в TTS сервисе: {e}")
         return None
-
-    iam_token = get_iam_token()
 
     headers = {
         'Authorization': f'Bearer {iam_token}',
@@ -19,29 +23,24 @@ def synthesize_speech(text: str, voice: str = "alexander", speed: float = 1.0) -
     data = {
         'text': text,
         'lang': 'ru-RU',
-        'voice': voice,
         'folderId': settings.YC_FOLDER_ID,
-        'format': 'oggopus',
-        'speed': str(speed)
+        'voice': 'alena',
+        'emotion': 'good',
+        'speed': '1.0',
+        'format': 'oggopus'
     }
 
     try:
-        response = requests.post(TTS_URL, headers=headers, data=data)
-
-        response.raise_for_status()
+        print(f"Отправка запроса на синтез речи для текста: '{text[:30]}...'")
+        response = requests.post(url, headers=headers, data=data, stream=False)
+        response.raise_for_status()  # Вызовет исключение для статусов 4xx/5xx
 
         return response.content
 
     except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP ошибка при вызове TTS API: {http_err}")
+        print(f"HTTP ошибка при синтезе речи: {http_err}")
         print(f"Тело ответа: {http_err.response.text}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Text-to-Speech service failed."
-        ) from http_err
+        return None
     except Exception as e:
-        print(f"Неизвестная ошибка в TTS сервисе: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred in the TTS service."
-        ) from e
+        print(f"Неизвестная ошибка при синтезе речи: {e}")
+        return None

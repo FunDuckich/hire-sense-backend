@@ -16,58 +16,73 @@ class InterviewDirector:
         self.db = db
         self.interview_repo = InterviewRepository(db)
 
-        # --- НОВАЯ ЛОГИКА ЗАГРУЗКИ КОНТЕКСТА ---
         self.vacancy_details = {}
         self.resume_summary = {}
-        self._load_context()  # Вызываем новый метод для загрузки
+        self._load_context()
+
+        # --- НОВЫЙ БЛОК: Загрузка контекста при инициализации ---
+        self.context = self._load_context()
+        if not self.context:
+            raise ValueError(f"Could not load context for session_id {self.session_id}")
+        # --------------------------------------------------------
 
         self.dialogue_history = []
         self._initialize_history()
 
-    def _load_context(self):
-        print(f"[Director] Загрузка контекста для сессии {self.session_id}...")
+    def _load_context(self) -> dict:
+        """
+        Загружает весь необходимый контекст для интервью из БД.
+        """
+        print(f"[Director] Loading context for session {self.session_id}")
+        session_details = self.interview_repo.get_session_with_details(self.session_id)
 
-        session = self.interview_repo.get_session_with_details(self.session_id)
+        if not session_details:
+            return {}
 
-        if not session:
-            raise ValueError(f"InterviewSession с ID {self.session_id} не найдена.")
-
-        application = session.application
-        if not application:
-            raise ValueError("С сессией не связана заявка (application).")
-
+        application = session_details.application
         vacancy = application.vacancy
-        if vacancy:
-            self.vacancy_details = {
-                "job_title": vacancy.job_title,
+        candidate = application.candidate
+        screening_result = application.screening_result
+
+        # Собираем все в удобный словарь
+        context = {
+            "candidate_name": candidate.name,
+            "vacancy_title": vacancy.job_title,
+            "vacancy_details": {
                 "required_experience": vacancy.required_experience,
                 "hard_skills": vacancy.hard_skills,
-                "evaluation_criteria": [{"criterion": c.criterion} for c in vacancy.evaluation_criteria]
-            }
+                "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in
+                                        vacancy.evaluation_criteria]
+            },
+            "screening_result": screening_result.result_json if screening_result else {}
+        }
+        return context
 
-        screening_result = application.screening_result
-        if screening_result and screening_result.result_json:
-            result_data = screening_result.result_json
-            if isinstance(result_data, str):
-                try:
-                    result_data = json.loads(result_data)
-                except json.JSONDecodeError:
-                    result_data = {}
-
-            self.resume_summary = {
-                "summary": result_data.get("summary", ""),
-                "questions_to_ask": result_data.get("questions_to_ask", [])
-            }
-        print("[Director] Контекст успешно загружен.")
+    def _initialize_history(self):
+        """Задает начальный системный промпт, используя загруженный контекст."""
+        # Теперь мы можем использовать self.context, который был загружен в __init__
+        system_prompt_text = (
+            f"Ты — HR-аватар Алекс. Ты проводишь собеседование на позицию '{self.context.get('vacancy_title')}'. "
+            f"Кандидата зовут {self.context.get('candidate_name')}. "
+            "Будь вежлив, задавай по одному вопросу за раз. Твоя цель - проверить компетенции кандидата."
+        )
+        system_prompt = {"role": "system", "content": system_prompt_text}
+        self.dialogue_history.append(system_prompt)
 
     async def start(self) -> tuple[bytes | None, str]:
-        print(f"[Director] Начинаем интервью для сессии {self.session_id}")
-        initial_questions = self.resume_summary.get("questions_to_ask", [])
-        if initial_questions:
-            first_question = initial_questions[0]
-            greeting_text = f"Здравствуйте! Меня зовут Алекс, я ваш AI-интервьюер. Давайте начнем. {first_question}"
+        questions_from_screening = self.context.get("screening_result", {}).get("questions_to_ask", [])
+
+        if questions_from_screening:
+            first_question = questions_from_screening[0]
+            greeting_text = (
+                f"Здравствуйте, {self.context.get('candidate_name')}! Меня зовут Алекс. Давайте начнем. "
+                f"В вашем резюме я увидел несколько интересных моментов. {first_question}"
+            )
         else:
-            greeting_text = "Здравствуйте! Меня зовут Алекс, я ваш AI-интервьюер. Давайте начнем. Расскажите немного о себе."
+            greeting_text = (
+                f"Здравствуйте, {self.context.get('candidate_name')}! Меня зовут Алекс. "
+                "Давайте начнем. Расскажите немного о себе."
+            )
 
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.AVATAR, message=greeting_text
