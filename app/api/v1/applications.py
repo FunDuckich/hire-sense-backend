@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.user import User
@@ -8,6 +9,8 @@ from app.repositories.vacancy_repository import VacancyRepository
 from app.repositories.screening_repository import ScreeningRepository
 from app.services import llm_service
 from app.models.application import ApplicationStatus
+from app.api.dependencies import get_current_hr_user
+from app.schemas.application import ApplicationForHROut, ApplicationDetailsOut
 
 
 # фоновая задача
@@ -66,6 +69,23 @@ def get_current_candidate_user(current_user: User = Depends(get_current_user)) -
     return current_user
 
 
+@router.get("/vacancies/{vacancy_id}/applications", response_model=List[ApplicationForHROut])
+def read_applications_for_vacancy(
+        vacancy_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    vacancy_repo = VacancyRepository(db)
+    vacancy = vacancy_repo.get_vacancy(vacancy_id)
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    if vacancy.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access applications for this vacancy")
+
+    app_repo = ApplicationRepository(db)
+    return app_repo.get_applications_for_vacancy(vacancy_id=vacancy_id)
+
+
 @router.post("/vacancies/{vacancy_id}/apply", status_code=status.HTTP_202_ACCEPTED)
 async def apply_for_vacancy(
         vacancy_id: int,
@@ -86,3 +106,24 @@ async def apply_for_vacancy(
     background_tasks.add_task(run_resume_screening, application.id, db)
 
     return {"message": "Your application has been accepted and is being processed."}
+
+
+@router.get("/applications/{application_id}", response_model=ApplicationDetailsOut)
+def read_application_details(
+        application_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    app_repo = ApplicationRepository(db)
+    application = app_repo.get_application_by_id(application_id=application_id)
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if application.vacancy.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this application")
+
+    if application.screening_result:
+        application.screening_result = application.screening_result.result_json
+
+    return application

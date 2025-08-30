@@ -1,11 +1,12 @@
 from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.user import User
-from app.schemas.vacancy import VacancyCreate, VacancyOut, VacancyUpdate
-from app.repositories.vacancy_repository import VacancyRepository
 from app.api.dependencies import get_db, get_current_hr_user
+from app.models.user import User
+from app.repositories.vacancy_repository import VacancyRepository
+from app.schemas.vacancy import VacancyCreate, VacancyOut, VacancyUpdate
 
 router = APIRouter()
 
@@ -18,13 +19,24 @@ def create_vacancy(
 
 ):
     vacancy_repo = VacancyRepository(db)
-    return vacancy_repo.create_vacancy(vacancy_data=vacancy_in)
+    return vacancy_repo.create_vacancy(
+        vacancy_data=vacancy_in, owner_id=current_user.id
+    )
 
 
 @router.get("/", response_model=List[VacancyOut])
 def read_vacancies(db: Session = Depends(get_db)):
     vacancy_repo = VacancyRepository(db)
     return vacancy_repo.get_all_vacancies()
+
+
+@router.get("/my", response_model=List[VacancyOut])
+def read_my_vacancies(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_hr_user)
+):
+    vacancy_repo = VacancyRepository(db)
+    return vacancy_repo.get_vacancies_by_owner(owner_id=current_user.id)
 
 
 @router.get("/{vacancy_id}", response_model=VacancyOut)
