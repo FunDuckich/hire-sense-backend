@@ -28,7 +28,9 @@ class InterviewSession(Base):
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, unique=True)
 
     application = relationship("Application", back_populates="interview_session")
-    transcript = relationship("InterviewTranscript", back_populates="session")
+    transcript = relationship("InterviewTranscript", back_populates="session", cascade="all, delete-orphan")
+
+    report = relationship("InterviewReport", uselist=False, back_populates="session", cascade="all, delete-orphan")
 
 
 class InterviewTranscript(Base):
