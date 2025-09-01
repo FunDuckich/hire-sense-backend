@@ -1,21 +1,12 @@
-from pydantic import BaseModel
-from .user import UserOut
-from ..models.application import ApplicationStatus
+from pydantic import BaseModel, computed_field
 
-
-class ScreeningResultSummaryOut(BaseModel):
-    overall_match_score: int
-
-    class Config:
-        from_attributes = True
-
-
+# Схема для CompetencyCheck в отчете
 class CompetencyCheckOut(BaseModel):
     criterion: str
     confirmed: bool
     evidence: str
 
-
+# Схема для полного отчета по скринингу
 class ScreeningReportOut(BaseModel):
     overall_match_score: int
     summary: str
@@ -26,13 +17,16 @@ class ScreeningReportOut(BaseModel):
     class Config:
         from_attributes = True
 
-
-class ApplicationDetailsOut(BaseModel):
-    id: int
-    status: ApplicationStatus
-    candidate: UserOut
-    resume_md: str
-    screening_result: ScreeningReportOut | None = None
+# Схема для краткого вывода в списке (воронке HR)
+class ScreeningResultSummaryOut(BaseModel):
+    @computed_field
+    @property
+    def overall_match_score(self) -> int:
+        if isinstance(self.result_json, dict):
+            return self.result_json.get("overall_match_score", 0)
+        return 0
 
     class Config:
         from_attributes = True
+
+# --- ApplicationDetailsOut ЗДЕСЬ БОЛЬШЕ НЕТ ---

@@ -1,17 +1,20 @@
 from datetime import datetime
 from pydantic import BaseModel
+from typing import List
+
+from .report import ScreeningResultSummaryOut, ScreeningReportOut, InterviewReportOut
 from .user import UserOut
-from .vacancy import VacancyOut
 from app.models.application import ApplicationStatus
-from .screening import ScreeningResultSummaryOut, ScreeningReportOut
 
 
-class ApplicationOut(BaseModel):
+class ApplicationDetailsOut(BaseModel):
     id: int
     status: ApplicationStatus
-    created_at: datetime
     candidate: UserOut
-    vacancy: VacancyOut
+    resume_md: str
+    screening_result: ScreeningReportOut | None = None
+
+    interview_report: InterviewReportOut | None = None
 
     class Config:
         from_attributes = True
