@@ -4,15 +4,13 @@ import traceback
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db
 from app.models.user import User
+from app.api.dependencies import get_db, get_current_candidate_user
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import InterviewSessionStartOut
+
 from app.services.interview_director import InterviewDirector
 from app.services import stt_service
-
-from fastapi import BackgroundTasks
-from app.background_tasks import run_interview_analysis
 
 router = APIRouter()
 
@@ -31,7 +29,7 @@ def get_current_candidate_user(current_user: User = Depends(get_db)) -> User:
     "/applications/{application_id}/start-interview",
     response_model=InterviewSessionStartOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Создать сессию интервью для отклика"
+    tags=["Interviews"]
 )
 def start_interview_session(
         application_id: int,
@@ -76,7 +74,6 @@ async def audio_stream_from_websocket(websocket: WebSocket):
 async def websocket_endpoint(
     websocket: WebSocket,
     session_id: int,
-    background_tasks: BackgroundTasks = Depends(),
     db: Session = Depends(get_db)
 ):
     await websocket.accept()

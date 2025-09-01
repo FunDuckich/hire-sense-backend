@@ -3,12 +3,27 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.interview import InterviewSession, InterviewStatus, InterviewTranscript, TranscriptRole
 from app.models.application import Application
 from app.models.vacancy import Vacancy
-from app.models.user import User 
-
 
 class InterviewRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    def get_session_with_details(self, session_id: int) -> InterviewSession | None:
+        """
+        Получает сессию интервью и сразу подгружает все связанные данные,
+        необходимые для контекста диалога (application, vacancy, candidate, screening_result).
+        """
+        statement = select(InterviewSession).options(
+            joinedload(InterviewSession.application).options(
+                joinedload(Application.vacancy).options(
+                    joinedload(Vacancy.evaluation_criteria)
+                ),
+                joinedload(Application.candidate),
+                joinedload(Application.screening_result)
+            )
+        ).where(InterviewSession.id == session_id)
+
+        return self.db.execute(statement).unique().scalar_one_or_none()
 
     def get_application_by_id(self, application_id: int) -> Application | None:
         return self.db.query(Application).filter(Application.id == application_id).first()

@@ -297,3 +297,37 @@ def analyze_interview_transcript(
         print(f"Ошибка парсинга JSON из ответа LLM при анализе интервью: {e}")
         print(f"Полученный ответ (до очистки): {response_text}")
         return None
+
+
+def get_interview_response(history: list, context: dict) -> str | None:
+    """Генерирует следующий вопрос или реплику аватара в ходе интервью."""
+
+    # Извлекаем данные из контекста для передачи в промпт
+    vacancy_details = context.get("vacancy_details", {})
+    screening_result = context.get("screening_result", {})
+
+    system_prompt = (
+        "Ты — HR-аватар по имени Алекс. Твоя задача — провести структурированное интервью. "
+        "Будь вежлив, профессионален, задавай по одному вопросу за раз. "
+        "Используй информацию о вакансии и резюме, чтобы задавать релевантные вопросы. "
+        "Если кандидат отвечает коротко, попроси его рассказать подробнее. "
+        "Твой ответ должен быть только текстом твоей следующей реплики."
+    )
+
+    user_prompt = f"""
+    Это контекст интервью:
+    ---
+    [ВАКАНСИЯ]: {json.dumps(vacancy_details, ensure_ascii=False, indent=2)}
+    [АНАЛИЗ РЕЗЮМЕ]: {json.dumps(screening_result, ensure_ascii=False, indent=2)}
+    ---
+
+    Это история нашего диалога:
+    ---
+    {json.dumps(history, ensure_ascii=False, indent=2)}
+    ---
+
+    Сгенерируй следующую реплику, продолжая диалог.
+    """
+
+    print("Отправка запроса на генерацию ответа в YandexGPT...")
+    return call_yandex_gpt(system_prompt, user_prompt, temperature=0.6)

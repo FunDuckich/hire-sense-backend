@@ -15,18 +15,14 @@ class InterviewDirector:
         self.session_id = session_id
         self.db = db
         self.interview_repo = InterviewRepository(db)
-
-        self.vacancy_details = {}
-        self.resume_summary = {}
-        self._load_context()
-
-        # --- НОВЫЙ БЛОК: Загрузка контекста при инициализации ---
-        self.context = self._load_context()
-        if not self.context:
-            raise ValueError(f"Could not load context for session_id {self.session_id}")
-        # --------------------------------------------------------
-
+        self.llm_service = llm_service
         self.dialogue_history = []
+
+        # --- ИСПРАВЛЕНИЕ 1 ---
+        # Загружаем контекст один раз и сохраняем его
+        self.context = self._load_context()
+        # --------------------
+
         self._initialize_history()
 
     def _load_context(self) -> dict:
@@ -96,37 +92,41 @@ class InterviewDirector:
         return audio_data, greeting_text
 
     async def handle_candidate_response(self, text: str) -> tuple[bytes | None, str]:
-        print(f"[Director] Обработка ответа кандидата: '{text}'")
+        """
+        Обрабатывает распознанный текст ответа кандидата.
+        """
+        print(f"[Director] Handling candidate response: '{text}'")
 
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.CANDIDATE, message=text
         )
         self.dialogue_history.append({"role": "user", "content": text})
 
-        import asyncio
-        loop = asyncio.get_running_loop()
-        next_question = await loop.run_in_executor(
-            None,
-            llm_service.get_interview_response,
-            self.dialogue_history,
-            self.vacancy_details,
-            self.resume_summary
+        # --- ИСПРАВЛЕНИЕ 2 ---
+        # Получаем следующий вопрос от LLM, передавая ему полный контекст
+        next_question = await asyncio.to_thread(
+            self.llm_service.get_interview_response,
+            history=self.dialogue_history,
+            # Передаем весь словарь контекста
+            context=self.context
         )
+        # --------------------
 
         if not next_question:
-            next_question = "Понятно, спасибо. Давайте перейдем к следующему вопросу."
+            # Обработка случая, когда LLM не вернул ответ
+            next_question = "Извините, у меня возникла небольшая техническая проблема. Давайте попробуем другой вопрос. Расскажите о своих сильных сторонах."
 
-        print(f"[Director] Ответ LLM: '{next_question}'")
+        print(f"[Director] LLM response: '{next_question}'")
 
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.AVATAR, message=next_question
         )
         self.dialogue_history.append({"role": "assistant", "content": next_question})
 
-        audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, next_question)
+        audio_data = tts_service.synthesize_speech(next_question)
 
+        print(f"[Director] Next question synthesized, sending to client.")
         return audio_data, next_question
-
     async def end_interview(self):
         print(f"[Director] Ending interview for session {self.session_id}")
         # TODO Здесь можно добавить логику обновления статуса сессии на COMPLETED
