@@ -1,6 +1,17 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+import enum
+
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+
+
+class VacancyStatus(str, enum.Enum):
+    DRAFT = "DRAFT"  # Создана вручную, еще не отправлена на обработку
+    PARSING = "PARSING"  # Загружена из PDF, идет парсинг полей
+    PREPARING_TAGS = "PREPARING_TAGS"  # Поля готовы, идет генерация тегов
+    PENDING_REVIEW = "PENDING_REVIEW"  # Все сгенерировано, ждет проверки HR
+    PUBLISHED = "PUBLISHED"  # Проверена и опубликована, видна кандидатам
+    ARCHIVED = "ARCHIVED"  # Снята с публикации
 
 
 class Vacancy(Base):
@@ -18,10 +29,12 @@ class Vacancy(Base):
     soft_skills = Column(Text)
     education = Column(String)
     what_we_offer = Column(Text)
+    status = Column(SQLAlchemyEnum(VacancyStatus), nullable=False, default=VacancyStatus.DRAFT,
+                    server_default=VacancyStatus.DRAFT.value)
 
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     owner = relationship("User", back_populates="vacancies")
-
+    tags = relationship("VacancyTag", back_populates="vacancy", cascade="all, delete-orphan")
     evaluation_criteria = relationship("EvaluationCriterion", back_populates="vacancy", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="vacancy", cascade="all, delete-orphan")
 

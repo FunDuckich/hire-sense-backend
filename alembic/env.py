@@ -25,6 +25,12 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 from app.core.database import Base
 from app.models.user import User
+from app.models.vacancy import Vacancy, EvaluationCriterion
+from app.models.application import Application
+from app.models.screening import ApplicationScreeningResult
+from app.models.interview import InterviewSession, InterviewTranscript
+from app.models.report import InterviewReport
+from app.models.vacancy_tag import VacancyTag
 
 target_metadata = Base.metadata
 
