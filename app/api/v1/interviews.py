@@ -1,28 +1,17 @@
 import base64
-import asyncio
 import traceback
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-
+from app.background_tasks import run_interview_analysis
 from app.models.user import User
-from app.api.dependencies import get_db, get_current_candidate_user
+from app.api.dependencies import get_db, get_audio_storage_service, get_current_candidate_user
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import InterviewSessionStartOut
-
 from app.services.interview_director import InterviewDirector
 from app.services import stt_service
+from app.services.storage_service import AudioStorageService
 
 router = APIRouter()
-
-
-# --- Зависимости, специфичные для этого роутера ---
-
-def get_current_candidate_user(current_user: User = Depends(get_db)) -> User:
-    from app.api.dependencies import get_current_user
-    current_user = Depends(get_current_user)
-    if current_user.role != "CANDIDATE":
-        raise HTTPException(status_code=403, detail="The user doesn't have enough privileges")
-    return current_user
 
 
 @router.post(
@@ -36,11 +25,6 @@ def start_interview_session(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_candidate_user)
 ):
-    """
-    Создает новую сессию интервью для существующей заявки.
-    Доступно только кандидату, который является владельцем заявки.
-    Возвращает ID созданной сессии, который используется для подключения к WebSocket.
-    """
     interview_repo = InterviewRepository(db)
 
     application = interview_repo.get_application_by_id(application_id)
@@ -58,10 +42,7 @@ def start_interview_session(
     return {"interview_session_id": interview_session.id, "status": interview_session.status}
 
 
-# --- WebSocket Эндпоинт ---
-
 async def audio_stream_from_websocket(websocket: WebSocket):
-    """Асинхронный генератор, который читает аудио-байты из WebSocket."""
     try:
         while True:
             yield await websocket.receive_bytes()
@@ -72,11 +53,26 @@ async def audio_stream_from_websocket(websocket: WebSocket):
 
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(
-    websocket: WebSocket,
-    session_id: int,
-    db: Session = Depends(get_db)
+        websocket: WebSocket,
+        session_id: int,
+        db: Session = Depends(get_db),
+        storage: AudioStorageService = Depends(get_audio_storage_service),
+        background_tasks: BackgroundTasks = Depends()
 ):
     await websocket.accept()
+    candidate_audio_buffer = bytearray()
+
+    async def audio_chunk_generator():
+        nonlocal candidate_audio_buffer
+        try:
+            while True:
+                chunk = await websocket.receive_bytes()
+                candidate_audio_buffer.extend(chunk)
+                yield chunk
+        except WebSocketDisconnect:
+            print("Клиент отключился, генератор чанков завершает работу.")
+            return
+
     try:
         director = InterviewDirector(session_id=session_id, db=db)
     except ValueError as e:
@@ -90,10 +86,8 @@ async def websocket_endpoint(
             audio_b64 = base64.b64encode(audio_data).decode('utf-8')
             await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
 
-        audio_generator = audio_stream_from_websocket(websocket)
-
         full_candidate_response = ""
-        async for result in stt_service.recognize_stream(audio_generator):
+        async for result in stt_service.recognize_stream(audio_chunk_generator()):
             await websocket.send_json(result)
 
             if result.get("type") in ["final", "final_refinement"]:
@@ -118,4 +112,16 @@ async def websocket_endpoint(
         traceback.print_exc()
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason=f"An internal error occurred: {e}")
     finally:
-        print(f"Соединение WebSocket для сессии {session_id} закрыто.")
+        if candidate_audio_buffer:
+            try:
+                print(f"Сохранение {len(candidate_audio_buffer)} байт аудио для сессии {session_id}...")
+                saved_file_id = storage.save(session_id, bytes(candidate_audio_buffer))
+
+                # TODO: В будущем здесь нужно будет передать saved_file_id в фоновую задачу анализа.
+                # Пока просто выводим в лог для проверки.
+                print(f"Аудио для сессии {session_id} успешно сохранено. ID файла: {saved_file_id}")
+
+            except Exception as e:
+                print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: не удалось сохранить аудио для сессии {session_id}: {e}")
+        else:
+            print(f"Аудиобуфер для сессии {session_id} пуст. Сохранение не требуется.")
