@@ -49,9 +49,6 @@ class VacancyRepository:
         if not db_vacancy:
             return None
 
-        for criterion in db_vacancy.evaluation_criteria:
-            self.db.delete(criterion)
-
         self.db.delete(db_vacancy)
         self.db.commit()
         return db_vacancy
