@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str
     EMAIL_SENDER: str
 
+    LOCAL_STORAGE_PATH: str = "/tmp/hr_avatar_audio"
+
     model_config = SettingsConfigDict(env_file=".env")
 
 
