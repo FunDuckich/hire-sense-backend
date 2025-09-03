@@ -1,30 +1,32 @@
-# app/services/speech_sense_service.py
-
 import asyncio
 import json
 import yandexcloud
 import yandex.cloud.ai.speechsense.v1.analysis_service_pb2 as analysis_service_pb2
 import yandex.cloud.ai.speechsense.v1.analysis_service_pb2_grpc as analysis_service_pb2_grpc
+import yandex.cloud.ai.speechsense.v1.dictionary_service_pb2 as dictionary_service_pb2
+import yandex.cloud.ai.speechsense.v1.dictionary_service_pb2_grpc as dictionary_service_pb2_grpc
+
 from yandex.cloud.operation.operation_service_pb2 import GetOperationRequest
 from yandex.cloud.operation.operation_service_pb2_grpc import OperationServiceStub
 
 from app.core.config import settings
 from app.services.speech_analytics_service import SpeechAnalyticsService
 
-# Универсальные словари, которые будут применяться ко всем интервью
 UNIVERSAL_VOCABULARIES = {
     "inconfidence": ["наверное", "возможно", "я думаю", "вроде бы", "не уверен", "сложно сказать", "насколько я помню"],
     "negativity": ["ужасный", "токсичный", "конфликт", "не платили", "заставляли", "ненавидел", "глупый менеджер"],
-    "achievements": ["реализовал", "внедрил", "оптимизировал", "увеличил", "сократил", "разработал с нуля", "руководил",
-                     "достиг"]
+    "achievements": ["реализовал", "внедрил", "оптимизировал", "увеличил", "сократил", "разработал с нуля", "руководил", "достиг"]
 }
+
 
 
 class SpeechSenseService(SpeechAnalyticsService):
     def __init__(self):
         sdk = yandexcloud.SDK(service_account_key=self._get_sa_key())
         self.analysis_stub = sdk.client(analysis_service_pb2_grpc.AnalysisServiceStub)
-        self.operation_stub = sdk.client(OperationServiceStub)  # Нужен для проверки статуса
+        self.operation_stub = sdk.client(OperationServiceStub)
+        # --- Новый gRPC-стаб для управления словарями ---
+        self.dictionary_stub = sdk.client(dictionary_service_pb2_grpc.DictionaryServiceStub)
 
         self.max_wait_time_seconds = 300
         self.check_interval_seconds = 10
@@ -36,6 +38,48 @@ class SpeechSenseService(SpeechAnalyticsService):
         except Exception as e:
             raise RuntimeError(
                 f"Не удалось прочитать файл сервисного ключа по пути '{settings.YC_SA_KEY_FILE_PATH}': {e}")
+
+    # --- НАЧАЛО НОВОГО КОДА ---
+    async def create_dictionary(self, name: str, words: list[str]) -> str:
+        """
+        Создает новый словарь в SpeechSense и возвращает его ID.
+        """
+        print(f"Создание словаря '{name}' в SpeechSense...")
+
+        dictionary_items = [dictionary_service_pb2.DictionaryItem(key=word) for word in words]
+
+        request = dictionary_service_pb2.CreateDictionaryRequest(
+            folder_id=settings.YC_FOLDER_ID,
+            name=name,
+            items=dictionary_items
+        )
+        try:
+            operation = self.dictionary_stub.Create(request)
+            # Операция создания словаря обычно синхронна, но лучше проверить документацию
+            # Здесь мы предполагаем, что она возвращает ID напрямую или через операцию
+            print(f"Словарь '{name}' успешно создан, ID: {operation.id}")
+            return operation.id  # или operation.response.id
+        except Exception as e:
+            print(f"gRPC ошибка при создании словаря '{name}': {e}")
+            raise RuntimeError(f"Не удалось создать словарь '{name}' в SpeechSense.") from e
+
+    async def delete_dictionary(self, dictionary_id: str) -> None:
+        """
+        Удаляет словарь из SpeechSense по его ID.
+        """
+        print(f"Удаление словаря с ID {dictionary_id} из SpeechSense...")
+        request = dictionary_service_pb2.DeleteDictionaryRequest(dictionary_id=dictionary_id)
+        try:
+            self.dictionary_stub.Delete(request)
+            print(f"Словарь {dictionary_id} успешно удален.")
+        except Exception as e:
+            # Важно обработать случай, если словарь уже удален
+            # В gRPC это обычно ошибка с кодом NOT_FOUND
+            print(f"gRPC ошибка при удалении словаря {dictionary_id}: {e}")
+            # Можно не выбрасывать исключение, если "не найдено" - это не ошибка для нас
+            pass
+
+    # --- КОНЕЦ НОВОГО КОДА ---
 
     async def _start_analysis(self, audio_file_path: str, vocabularies_to_use: dict) -> str:
         with open(audio_file_path, 'rb') as f:
