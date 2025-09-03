@@ -8,7 +8,8 @@ from app.repositories.screening_repository import ScreeningRepository
 from app.services import llm_service
 from app.models.application import ApplicationStatus
 from app.services.email_service import email_service
-
+from app.services.storage_service import LocalStorageService
+from app.services.speech_sense_service import speech_sense_service
 
 def run_resume_screening(application_id: int):
     """
@@ -72,77 +73,75 @@ def run_resume_screening(application_id: int):
         print(f"Сессия БД для задачи скрининга заявки #{application_id} закрыта.")
 
 
-def run_interview_analysis(session_id: int, is_completed_correctly: bool):
-    """
-    Фоновая задача для анализа транскрипции интервью после его завершения.
+def run_interview_analysis(
+        session_id: int,
+        is_completed_correctly: bool,
+        saved_audio_path: str | None
+):
+    print(f"Запуск анализа для сессии интервью #{session_id}. Завершено корректно: {is_completed_correctly}")
 
-    Выбирает тип анализа (полный или предварительный) в зависимости от того,
-    было ли интервью завершено штатно.
-
-    Args:
-        session_id: ID сессии интервью для анализа.
-        is_completed_correctly: Флаг, указывающий на штатное завершение.
-    """
-    if is_completed_correctly:
-        print(f"Запуск ПОЛНОГО анализа для корректно завершенной сессии интервью #{session_id}...")
-    else:
-        print(f"Запуск ПРЕДВАРИТЕЛЬНОГО анализа для прерванной сессии интервью #{session_id}...")
-
-    db: Session = SessionLocal()
+    db = SessionLocal()
+    report_repo = ReportRepository(db)
+    interview_repo = InterviewRepository(db)
+    storage_service = LocalStorageService()
 
     try:
-        interview_repo = InterviewRepository(db)
-        report_repo = ReportRepository(db)
+        if not is_completed_correctly:
+            print("Интервью прервано. Запуск 'дешевого' анализа.")
+            transcript_text = "Интервью было прервано пользователем."  # TODO: Получить частичный транскрипт
+            cheap_summary = llm_service.analyze_interview_transcript_preliminary(transcript_text)
+            if cheap_summary:
+                report_repo.create_report(session_id=session_id, final_summary=cheap_summary)
+            return
 
-        session_details = interview_repo.get_session_with_transcript(session_id)  # Предполагается, что есть такой метод
+        speech_sense_result = None
+        if saved_audio_path:
+            try:
+                speech_sense_result = asyncio.run(speech_sense_service.analyze_audio(saved_audio_path))
+                print(f"Анализ речи для сессии #{session_id} завершен.")
+            except Exception as e:
+                print(f"Ошибка анализа речи для сессии #{session_id}: {e}")
 
+        session_details = interview_repo.get_session_with_details(session_id)
         if not session_details:
-            print(f"ОШИБКА АНАЛИЗА: Сессия #{session_id} не найдена в БД.")
+            print(f"Ошибка: сессия #{session_id} не найдена для финального анализа.")
             return
 
         transcript_entries = session_details.transcript
-        if not transcript_entries:
-            print(f"ОШИБКА АНАЛИЗА: Транскрипция для сессии #{session_id} пуста. Анализ отменен.")
-            return
-
         transcript_text = "\n".join(
             f"{entry.role.value}: {entry.message}" for entry in transcript_entries
         )
 
-        analysis_result = None
-        if is_completed_correctly:
-            application = session_details.application
-            vacancy = application.vacancy
-            screening_result = application.screening_result
+        vacancy = session_details.application.vacancy
+        screening_result = session_details.application.screening_result
+        vacancy_details = {
+            "job_title": vacancy.job_title,
+            "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in vacancy.evaluation_criteria]
+        }
+        screening_report = screening_result.result_json if screening_result else {}
 
-            vacancy_details = {
-                "job_title": vacancy.job_title,
-                "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in
-                                        vacancy.evaluation_criteria]
-            }
-            screening_report = screening_result.result_json if screening_result else {}
+        final_summary = llm_service.analyze_interview_transcript(
+            transcript=transcript_text,
+            vacancy_details=vacancy_details,
+            screening_report=screening_report,
+            speech_sense_data=speech_sense_result
+        )
 
-            analysis_result = llm_service.analyze_interview_transcript(
-                transcript=transcript_text,
-                vacancy_details=vacancy_details,
-                screening_report=screening_report
-            )
-        else:
-            analysis_result = llm_service.analyze_interrupted_transcript(
-                transcript=transcript_text
-            )
-
-        if not analysis_result:
-            print(f"ОШИБКА АНАЛИЗА: LLM не смог сгенерировать отчет для сессии #{session_id}.")
+        if not final_summary:
+            print(f"Ошибка: не удалось сгенерировать финальный отчет для сессии #{session_id}.")
             return
 
-        report_repo.create_report(session_id=session_id, report_data=analysis_result)
+        report_repo.create_report(
+            session_id=session_id,
+            final_summary=final_summary,
+            speech_sense_summary=speech_sense_result
+        )
+        print(f"Финальный анализ для сессии #{session_id} успешно завершен и сохранен.")
 
-        print(f"Анализ для сессии #{session_id} успешно завершен. Отчет сохранен в БД.")
-
-    except Exception as e:
-        print(f"КРИТИЧЕСКАЯ ОШИБКА при анализе сессии #{session_id}: {e}")
     finally:
+        if saved_audio_path:
+            storage_service.delete(saved_audio_path)
+
         db.close()
 
 def run_resume_screening(application_id: int, db: Session):

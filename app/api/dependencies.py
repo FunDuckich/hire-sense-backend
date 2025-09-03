@@ -66,3 +66,7 @@ def get_audio_storage_service() -> AudioStorageService:
 
 def get_speech_analytics_service() -> SpeechAnalyticsService:
     return speech_sense_service
+
+
+def get_speech_analytics_service() -> SpeechAnalyticsService:
+    return speech_sense_service
