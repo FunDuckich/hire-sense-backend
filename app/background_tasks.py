@@ -10,6 +10,8 @@ from app.models.application import ApplicationStatus
 from app.services.email_service import email_service
 from app.services.storage_service import LocalStorageService
 from app.services.speech_sense_service import speech_sense_service
+from app.models.vacancy import Vacancy, VacancyStatus
+from app.models.vacancy_tag import VacancyTag
 
 def run_resume_screening(application_id: int):
     """
@@ -193,3 +195,75 @@ def run_resume_screening(application_id: int, db: Session):
             email_service.send_invitation_email(updated_application)
         else:
             email_service.send_rejection_email(updated_application)
+
+
+def generate_vacancy_tags(vacancy_id: int):
+    """
+    Фоновая задача для извлечения ключевых слов из вакансии с помощью LLM
+    и сохранения их в базу данных.
+    """
+    print(f"Запуск генерации тегов для вакансии #{vacancy_id}...")
+    db: Session = SessionLocal()
+    vacancy_repo = VacancyRepository(db)
+
+    try:
+        vacancy = vacancy_repo.get_vacancy(vacancy_id)
+        if not vacancy:
+            print(f"Ошибка генерации тегов: вакансия #{vacancy_id} не найдена.")
+            return
+
+        # 1. Извлекаем текст вакансии
+        vacancy_text = f"""
+        Должность: {vacancy.job_title}
+        Технологический стек: {vacancy.tech_stack}
+        Ключевые обязанности: {vacancy.key_responsibilities}
+        Требуемый опыт: {vacancy.required_experience}
+        Hard skills: {vacancy.hard_skills}
+        Soft skills: {vacancy.soft_skills}
+        """
+
+        extracted_tags = llm_service.extract_tags_from_vacancy(
+            vacancy_text)
+
+        if not extracted_tags:
+            print(f"Не удалось извлечь теги для вакансии #{vacancy_id}.")
+            return
+
+        vacancy_repo.delete_existing_tags(vacancy_id)  # Очищаем старые теги на случай редактирования
+
+        for tag_type, tags_list in extracted_tags.items():
+            for tag_text in tags_list:
+                tag = VacancyTag(
+                    vacancy_id=vacancy_id,
+                    text=tag_text.strip(),
+                    type=tag_type.upper(),
+                    is_custom=True
+                )
+                db.add(tag)
+
+        db.commit()
+        print(f"Теги для вакансии #{vacancy_id} успешно сгенерированы и сохранены.")
+
+        vacancy_repo.update_vacancy_status(vacancy_id, VacancyStatus.PENDING_REVIEW)
+
+    except Exception as e:
+        print(f"Критическая ошибка при генерации тегов для вакансии #{vacancy_id}: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def cleanup_vacancy_tags(vacancy_id: int, tags_to_delete: list[dict]):
+    """
+    Фоновая задача для удаления словарей из SpeechSense после архивации/удаления вакансии.
+    """
+    print(f"Запуск очистки SpeechSense словарей для вакансии #{vacancy_id}...")
+
+    for tag_info in tags_to_delete:
+        if tag_info.get("speech_sense_dict_id"):
+            try:
+                asyncio.run(speech_sense_service.delete_dictionary(tag_info["speech_sense_dict_id"]))
+            except Exception as e:
+                print(f"Не удалось удалить словарь {tag_info['speech_sense_dict_id']}: {e}")
+
+    print(f"Очистка словарей для вакансии #{vacancy_id} завершена.")
