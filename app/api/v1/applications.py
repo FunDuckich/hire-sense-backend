@@ -14,59 +14,6 @@ from app.schemas.application import ApplicationForHROut, ApplicationDetailsOut
 from app.services.email_service import email_service
 from app.background_tasks import run_resume_screening
 
-
-# фоновая задача
-def run_resume_screening(application_id: int, db: Session):
-    print(f"Запуск AI-скрининга для заявки #{application_id}...")
-
-    app_repo = ApplicationRepository(db)
-    screening_repo = ScreeningRepository(db)
-    vacancy_repo = VacancyRepository(db)
-
-    application = app_repo.get_application_by_id(application_id)
-    if not application:
-        print(f"Ошибка: заявка #{application_id} не найдена.")
-        return
-
-    vacancy = vacancy_repo.get_vacancy(application.vacancy_id)
-    if not vacancy:
-        print(f"Ошибка: вакансия #{application.vacancy_id} не найдена.")
-        return
-
-    vacancy_details = {
-        "job_title": vacancy.job_title,
-        "required_experience": vacancy.required_experience,
-        "hard_skills": vacancy.hard_skills,
-        "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in vacancy.evaluation_criteria]
-    }
-
-    analysis_result = llm_service.analyze_resume(
-        vacancy_details=vacancy_details,
-        resume_md=application.resume_md
-    )
-
-    if not analysis_result:
-        print(f"Ошибка: не удалось проанализировать резюме для заявки #{application_id}.")
-        app_repo.update_application_status(application_id, ApplicationStatus.REJECTED)
-        return
-
-    screening_repo.create_screening_result(application_id, analysis_result)
-
-    score = analysis_result.get("overall_match_score", 0)
-    screening_threshold = 60
-
-    new_status = ApplicationStatus.INTERVIEW_PENDING if score >= screening_threshold else ApplicationStatus.REJECTED
-    updated_application = app_repo.update_application_status(application_id, new_status)
-
-    print(f"Скрининг для заявки #{application_id} завершен! Результат: {score}%, Статус: {new_status.value}")
-
-    if updated_application:
-        if new_status == ApplicationStatus.INTERVIEW_PENDING:
-            email_service.send_invitation_email(updated_application)
-        else:
-            email_service.send_rejection_email(updated_application)
-
-
 router = APIRouter()
 
 
