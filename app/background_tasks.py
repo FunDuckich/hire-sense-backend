@@ -71,8 +71,22 @@ def run_resume_screening(application_id: int):
         db.close()
         print(f"Сессия БД для задачи скрининга заявки #{application_id} закрыта.")
 
-def run_interview_analysis(session_id: int):
-    print(f"Запуск финального анализа для сессии интервью #{session_id}...")
+
+def run_interview_analysis(session_id: int, is_completed_correctly: bool):
+    """
+    Фоновая задача для анализа транскрипции интервью после его завершения.
+
+    Выбирает тип анализа (полный или предварительный) в зависимости от того,
+    было ли интервью завершено штатно.
+
+    Args:
+        session_id: ID сессии интервью для анализа.
+        is_completed_correctly: Флаг, указывающий на штатное завершение.
+    """
+    if is_completed_correctly:
+        print(f"Запуск ПОЛНОГО анализа для корректно завершенной сессии интервью #{session_id}...")
+    else:
+        print(f"Запуск ПРЕДВАРИТЕЛЬНОГО анализа для прерванной сессии интервью #{session_id}...")
 
     db: Session = SessionLocal()
 
@@ -80,46 +94,56 @@ def run_interview_analysis(session_id: int):
         interview_repo = InterviewRepository(db)
         report_repo = ReportRepository(db)
 
-        session_details = interview_repo.get_session_with_details(session_id)
+        session_details = interview_repo.get_session_with_transcript(session_id)  # Предполагается, что есть такой метод
+
         if not session_details:
-            print(f"Ошибка анализа: сессия #{session_id} не найдена.")
+            print(f"ОШИБКА АНАЛИЗА: Сессия #{session_id} не найдена в БД.")
             return
 
         transcript_entries = session_details.transcript
+        if not transcript_entries:
+            print(f"ОШИБКА АНАЛИЗА: Транскрипция для сессии #{session_id} пуста. Анализ отменен.")
+            return
+
         transcript_text = "\n".join(
             f"{entry.role.value}: {entry.message}" for entry in transcript_entries
         )
-        if not transcript_text:
-            print(f"Ошибка анализа: транскрипция для сессии #{session_id} пуста.")
-            return
 
-        application = session_details.application
-        vacancy = application.vacancy
-        screening_result = application.screening_result
+        analysis_result = None
+        if is_completed_correctly:
+            application = session_details.application
+            vacancy = application.vacancy
+            screening_result = application.screening_result
 
-        vacancy_details = {
-            "job_title": vacancy.job_title,
-            "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in vacancy.evaluation_criteria]
-        }
-        screening_report = screening_result.result_json if screening_result else {}
+            vacancy_details = {
+                "job_title": vacancy.job_title,
+                "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in
+                                        vacancy.evaluation_criteria]
+            }
+            screening_report = screening_result.result_json if screening_result else {}
 
-        analysis_result = llm_service.analyze_interview_transcript(
-            transcript=transcript_text,
-            vacancy_details=vacancy_details,
-            screening_report=screening_report
-        )
+            analysis_result = llm_service.analyze_interview_transcript(
+                transcript=transcript_text,
+                vacancy_details=vacancy_details,
+                screening_report=screening_report
+            )
+        else:
+            analysis_result = llm_service.analyze_interrupted_transcript(
+                transcript=transcript_text
+            )
 
         if not analysis_result:
-            print(f"Ошибка: не удалось сгенерировать отчет для сессии #{session_id}.")
+            print(f"ОШИБКА АНАЛИЗА: LLM не смог сгенерировать отчет для сессии #{session_id}.")
             return
 
         report_repo.create_report(session_id=session_id, report_data=analysis_result)
 
-        print(f"Финальный анализ для сессии #{session_id} успешно завершен и сохранен.")
+        print(f"Анализ для сессии #{session_id} успешно завершен. Отчет сохранен в БД.")
 
+    except Exception as e:
+        print(f"КРИТИЧЕСКАЯ ОШИБКА при анализе сессии #{session_id}: {e}")
     finally:
         db.close()
-
 
 def run_resume_screening(application_id: int, db: Session):
     print(f"Запуск AI-скрининга для заявки #{application_id}...")
