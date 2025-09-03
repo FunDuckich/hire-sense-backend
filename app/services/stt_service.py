@@ -4,12 +4,13 @@ import json
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 import yandexcloud
+from app.core.config import settings
 
 try:
-    with open("authorized_key.json", 'r', encoding='utf-8') as key_file:
+    with open(settings.YC_SA_KEY_FILE_PATH, 'r', encoding='utf-8') as key_file:
         sa_key_data = json.load(key_file)
 except Exception as e:
-    raise RuntimeError(f"Не удалось прочитать файл authorized_key.json: {e}")
+    raise RuntimeError(f"Не удалось прочитать файл ключа по пути: {settings.YC_SA_KEY_FILE_PATH}. Ошибка: {e}")
 
 sdk = yandexcloud.SDK(service_account_key=sa_key_data)
 

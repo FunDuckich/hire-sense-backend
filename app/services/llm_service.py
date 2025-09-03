@@ -24,7 +24,7 @@ def get_iam_token() -> str:
     if _iam_token_cache["token"] is None or _iam_token_cache["expires_at"] <= now_ts + 60:
         print("Обновление IAM-токена...")
         try:
-            with open("authorized_key.json", 'r', encoding='utf-8') as key_file:
+            with open(settings.YC_SA_KEY_FILE_PATH, 'r', encoding='utf-8') as key_file:
                 private_key_data = json.load(key_file)
                 private_key = private_key_data["private_key"]
 
