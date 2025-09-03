@@ -299,35 +299,66 @@ def analyze_interview_transcript(
         return None
 
 
-def get_interview_response(history: list, context: dict) -> str | None:
-    """Генерирует следующий вопрос или реплику аватара в ходе интервью."""
+def analyze_interrupted_transcript(transcript: str) -> dict | None:
+    """
+    Проводит "дешевый" анализ прерванной транскрипции интервью.
 
-    # Извлекаем данные из контекста для передачи в промпт
-    vacancy_details = context.get("vacancy_details", {})
-    screening_result = context.get("screening_result", {})
+    Задача этой функции — не оценивать кандидата, а предоставить HR
+    краткую выжимку того, что успели обсудить до прерывания сессии.
 
+    Args:
+        transcript: Полный текст транскрипции диалога.
+
+    Returns:
+        Словарь с саммари и заметками о прерывании, либо None в случае ошибки.
+    """
     system_prompt = (
-        "Ты — HR-аватар по имени Алекс. Твоя задача — провести структурированное интервью. "
-        "Будь вежлив, профессионален, задавай по одному вопросу за раз. "
-        "Используй информацию о вакансии и резюме, чтобы задавать релевантные вопросы. "
-        "Если кандидат отвечает коротко, попроси его рассказать подробнее. "
-        "Твой ответ должен быть только текстом твоей следующей реплики."
+        "Ты — AI-ассистент, специализирующийся на анализе текста. "
+        "Твоя задача — быстро и кратко суммировать содержание диалога. "
+        "Твой ответ ДОЛЖЕН БЫТЬ ТОЛЬКО в формате валидного JSON-объекта. "
+        "Не используй разметку Markdown, вводные фразы или любые символы до или после JSON-объекта."
     )
 
     user_prompt = f"""
-    Это контекст интервью:
-    ---
-    [ВАКАНСИЯ]: {json.dumps(vacancy_details, ensure_ascii=False, indent=2)}
-    [АНАЛИЗ РЕЗЮМЕ]: {json.dumps(screening_result, ensure_ascii=False, indent=2)}
-    ---
+    Проанализируй текст **прерванного** интервью между AI-аватаром и кандидатом.
+    Не нужно ставить оценки, анализировать компетенции или давать рекомендации.
 
-    Это история нашего диалога:
-    ---
-    {json.dumps(history, ensure_ascii=False, indent=2)}
-    ---
+    Твоя задача — выполнить три действия:
+    1. В поле `summary` напиши очень краткую выжимку (2-3 предложения) того, какие темы были затронуты и что кандидат успел о себе рассказать.
+    2. В поле `status_note` вставь точную фразу: "Интервью было прервано. Данный отчет является предварительным и не содержит оценок."
+    3. В поле `recommendation` вставь точную фразу: "Требуется ручная проверка HR-специалистом."
 
-    Сгенерируй следующую реплику, продолжая диалог.
+    Верни результат в формате JSON со следующей структурой:
+    {{
+      "summary": "<краткая выжимка диалога>",
+      "status_note": "Интервью было прервано. Данный отчет является предварительным и не содержит оценок.",
+      "recommendation": "Требуется ручная проверка HR-специалистом."
+    }}
+
+    Вот транскрипция для анализа:
+    ---
+    {transcript}
+    ---
     """
 
-    print("Отправка запроса на генерацию ответа в YandexGPT...")
-    return call_yandex_gpt(system_prompt, user_prompt, temperature=0.6)
+    print("Отправка запроса на предварительный анализ прерванного интервью в YandexGPT...")
+    response_text = call_yandex_gpt(system_prompt, user_prompt, temperature=0.3)
+
+    if not response_text:
+        return None
+
+    try:
+        clean_response = response_text.strip()
+        if clean_response.startswith("```json"):
+            clean_response = clean_response[7:]
+        if clean_response.startswith("```"):
+            clean_response = clean_response[3:]
+        if clean_response.endswith("```"):
+            clean_response = clean_response[:-3]
+
+        return json.loads(clean_response)
+
+    except json.JSONDecodeError as e:
+        print(f"Ошибка парсинга JSON из ответа LLM при анализе прерванного интервью: {e}")
+        print(f"Полученный ответ (до очистки): {response_text}")
+        return None

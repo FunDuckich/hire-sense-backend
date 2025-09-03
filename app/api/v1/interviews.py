@@ -111,8 +111,11 @@ async def websocket_endpoint(
 
     except WebSocketDisconnect:
         print(f"Клиент отключился от сессии {session_id}. Запускаем финальный анализ.")
-        await director.end_interview()
-        background_tasks.add_task(run_interview_analysis, session_id)
+        session = director.interview_repo.update_session_completion_status(
+            session_id=session_id,
+            is_completed_correctly=director.is_finished_correctly
+        )
+        background_tasks.add_task(run_interview_analysis, session.id, session.is_completed_correctly)
     except Exception as e:
         print(f"Необработанная ошибка в WebSocket для сессии {session_id}:")
         traceback.print_exc()

@@ -45,3 +45,15 @@ class InterviewRepository:
         ).where(InterviewSession.id == session_id)
 
         return self.db.execute(statement).unique().scalar_one_or_none()
+
+    def update_session_completion_status(self, session_id: int,
+                                         is_completed_correctly: bool) -> InterviewSession | None:
+        """Обновляет статус завершения сессии и время окончания."""
+        db_session = self.db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+        if db_session:
+            db_session.is_completed_correctly = is_completed_correctly
+            db_session.ended_at = func.now()  # Устанавливаем время окончания
+            db_session.status = InterviewStatus.COMPLETED  # Меняем общий статус
+            self.db.commit()
+            self.db.refresh(db_session)
+        return db_session
