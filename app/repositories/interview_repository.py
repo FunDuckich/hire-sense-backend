@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload
 from app.models.interview import InterviewSession, InterviewStatus, InterviewTranscript, TranscriptRole
 from app.models.application import Application
