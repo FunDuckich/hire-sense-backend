@@ -3,12 +3,14 @@ import traceback
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import InterviewSessionStartOut
 from app.services.interview_director import InterviewDirector
 from app.services import stt_service
 from app.background_tasks import run_interview_analysis
+
+from app.api.dependencies import get_db, get_current_candidate_user
+from app.models.user import User
 
 router = APIRouter()
 
@@ -19,12 +21,20 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Создать сессию интервью для отклика"
 )
-def start_interview_session(application_id: int, db: Session = Depends(get_db)):
-    # Упрощенный эндпоинт для тестов. В проде потребуется аутентификация кандидата.
+def start_interview_session(
+        application_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_candidate_user)
+):
     interview_repo = InterviewRepository(db)
+
     application = interview_repo.get_application_by_id(application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
+
+    if application.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to start this interview for this application")
+
     if application.interview_session:
         raise HTTPException(status_code=400, detail="Interview session already exists for this application")
 
