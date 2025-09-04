@@ -49,31 +49,26 @@ async def audio_stream_from_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         return
 
+
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(
-    websocket: WebSocket,
-    session_id: int,
-    db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks = Depends()
+        websocket: WebSocket,
+        session_id: int,
+        db: Session = Depends(get_db),
+        background_tasks: BackgroundTasks = Depends()
 ):
     await websocket.accept()
-
-    director = None # Объявляем здесь, чтобы был доступен в finally
+    director = None
     try:
         director = InterviewDirector(session_id=session_id, db=db)
-    except ValueError as e:
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason=str(e))
-        return
 
-    try:
-        # Старт диалога
         audio_data, text = await director.start()
         if audio_data:
             audio_b64 = base64.b64encode(audio_data).decode('utf-8')
             await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
 
-        # Основной цикл диалога
         audio_generator = audio_stream_from_websocket(websocket)
+
         full_candidate_response = ""
         async for result in stt_service.recognize_stream(audio_generator):
             await websocket.send_json(result)
@@ -85,15 +80,15 @@ async def websocket_endpoint(
                 clean_response = full_candidate_response.strip()
                 if clean_response:
                     audio_data, text = await director.handle_candidate_response(clean_response)
+
                     if audio_data:
                         audio_b64 = base64.b64encode(audio_data).decode('utf-8')
                         await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
 
-                    # Проверяем, не пора ли заканчивать
-                    if director.is_interview_finished():
-                        await director.say_goodbye() # Предполагаем, что директор может сказать прощальную фразу
+                    if director.is_finished_correctly:
+                        print(f"[WebSocket] Директор завершил сессию {session_id} штатно. Закрываем соединение.")
                         await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
-                        break # Выходим из цикла, чтобы попасть в finally
+                        break  # Выходим из цикла for, чтобы перейти к finally
 
                     full_candidate_response = ""
 
@@ -102,16 +97,21 @@ async def websocket_endpoint(
     except Exception as e:
         print(f"Необработанная ошибка в WebSocket для сессии {session_id}:")
         traceback.print_exc()
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason=f"An internal error occurred: {e}")
+        if not websocket.client_state == websocket.client_state.DISCONNECTED:
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
     finally:
-        print(f"Соединение WebSocket для сессии {session_id} закрыто. Финализация...")
+        print(f"Финализация сессии {session_id}...")
         if director:
-            # Обновляем статус сессии в БД (COMPLETED или ERROR)
-            director.end_interview()
-            # Запускаем фоновую задачу анализа
-            background_tasks.add_task(
-                run_interview_analysis,
-                session_id=director.session_id,
+            session = director.interview_repo.update_session_completion_status(
+                session_id=session_id,
                 is_completed_correctly=director.is_finished_correctly
             )
-            print(f"Фоновая задача анализа для сессии {director.session_id} запланирована.")
+
+            if session:
+                background_tasks.add_task(
+                    run_interview_analysis,
+                    session.id,
+                    session.is_completed_correctly
+                )
+                print(
+                    f"Фоновая задача анализа для сессии {session_id} запланирована. Статус завершения: {session.is_completed_correctly}")

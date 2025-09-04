@@ -7,11 +7,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    MAX_INTERVIEW_DURATION_SECONDS: int = 1200
 
     YC_SERVICE_ACCOUNT_ID: str
     YC_KEY_ID: str
     YC_FOLDER_ID: str
-    YC_SA_KEY_FILE_PATH: str
 
     SMTP_SERVER: str
     SMTP_PORT: int
