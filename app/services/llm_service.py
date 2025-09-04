@@ -1,11 +1,9 @@
 import json
 import time
 from datetime import datetime
-
 import jwt
 import requests
 from typing import TypedDict
-
 from app.core.config import settings
 
 
@@ -157,7 +155,7 @@ def analyze_resume(vacancy_details: dict, resume_md: str) -> dict | None:
 
 def get_interview_response(history: list[dict], vacancy_details: dict, resume_summary: dict) -> str:
     system_prompt = (
-        "Ты — HR-аватар Алекс. Веди первичное IT-собеседование. Будь профессионален, вежлив, дружелюбен. "
+        "Ты — HR-аватар Алекс. Веди первичное собеседование. Будь профессионален, вежлив, дружелюбен. "
         "Задавай по ОДНОМУ открытому вопросу за раз. Твоя цель — раскрыть опыт кандидата. "
         "Если ответ короткий, задай уточняющий вопрос по той же теме. Не повторяйся."
     )
@@ -250,3 +248,34 @@ def analyze_interrupted_transcript(transcript: str) -> dict | None:
     ---
     """
     return _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.3)
+
+
+def check_interview_completion(dialogue_history: list[dict], vacancy_details: dict) -> str:
+    system_prompt = (
+        "Ты — HR-супервайзер, наблюдающий за ходом интервью. Твоя задача — решить, нужно ли продолжать диалог. "
+        "Проанализируй диалог и ключевые требования вакансии. "
+        "Ответь ТОЛЬКО ОДНИМ СЛОВОМ: CONTINUE или FINISH."
+    )
+
+    criteria = [crit.get("criterion") for crit in vacancy_details.get("evaluation_criteria", [])]
+
+    user_prompt = f"""
+    КЛЮЧЕВЫЕ ТРЕБОВАНИЯ ВАКАНСИИ, которые нужно проверить:
+    - {", ".join(criteria) if criteria else "Общие компетенции"}
+
+    ИСТОРИЯ ДИАЛОГА:
+    ---
+    {json.dumps(dialogue_history, ensure_ascii=False, indent=2)}
+    ---
+
+    ЗАДАЧА: Покрыты ли в диалоге все ключевые требования?
+    - Если нужно задать еще вопросы, чтобы раскрыть темы глубже или покрыть все требования, ответь: CONTINUE.
+    - Если кандидат уже предоставил достаточно информации по всем ключевым требованиям, ответь: FINISH.
+    """
+
+    decision = _call_yandex_gpt(system_prompt, user_prompt, temperature=0.1)
+
+    if decision and "FINISH" in decision.upper():
+        return "FINISH"
+
+    return "CONTINUE"
