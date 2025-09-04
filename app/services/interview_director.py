@@ -8,6 +8,7 @@ from app.services import tts_service, llm_service
 import time
 from app.core.config import settings
 
+
 class InterviewDirector:
     def __init__(self, session_id: int, db: Session):
         if not session_id:
@@ -124,7 +125,6 @@ class InterviewDirector:
             self.context.get("screening_result", {})
         )
 
-
         print(f"[Director] Ответ LLM: '{next_question}'")
 
         self.interview_repo.add_transcript_entry(
@@ -135,27 +135,6 @@ class InterviewDirector:
         audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, next_question)
 
         return audio_data, next_question
-
-    def is_interview_finished(self) -> bool:
-        """Проверяет, завершен ли диалог по логике (например, достигнут ли лимит вопросов)."""
-        # Пока что заглушка, которая должна быть реализована Б2.
-        # Допустим, мы считаем интервью завершенным, если в истории 10 реплик.
-        return len(self.dialogue_history) >= 10  # Заглушка: если 10 реплик, считаем, что пора
-
-    def end_interview(self):
-        """
-        Обновляет статус сессии, исходя из того, как она завершилась.
-        Вызывается при закрытии WebSocket.
-        """
-        if self.is_finished_correctly:
-            new_status = InterviewStatus.COMPLETED
-            print(f"[Director] Интервью {self.session_id} завершено успешно. Статус: {new_status.value}")
-        else:
-            # Сюда попадаем, если произошел WebSocketDisconnect до штатного завершения
-            new_status = InterviewStatus.ERROR  # Используем ERROR для обозначения нештатного завершения
-            print(f"[Director] Интервью {self.session_id} завершено нештатно. Статус: {new_status.value}")
-
-        self.interview_repo.update_session_status(self.session_id, new_status)
 
     async def _get_final_phrase(self) -> tuple[bytes | None, str]:
         self.is_finished_correctly = True
