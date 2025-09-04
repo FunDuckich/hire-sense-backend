@@ -1,8 +1,6 @@
-from datetime import datetime
 from pydantic import BaseModel
-from typing import List
-
-from .report import ScreeningResultSummaryOut, ScreeningReportOut, InterviewReportOut
+from .screening import ScreeningResultSummaryOut, ScreeningReportOut
+from .report import InterviewReportOut
 from .user import UserOut
 from app.models.application import ApplicationStatus
 
