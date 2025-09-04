@@ -4,15 +4,6 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 
-class VacancyStatus(str, enum.Enum):
-    DRAFT = "DRAFT" # Создана вручную, ожидает заполнения
-    PARSING = "PARSING" # Загружен PDF, идет парсинг полей
-    PREPARING_TAGS = "PREPARING_TAGS" # Поля заполнены, идет генерация тегов
-    PENDING_REVIEW = "PENDING_REVIEW" # Все готово, ждет проверки HR
-    PUBLISHED = "PUBLISHED" # Опубликована и видна кандидатам
-    ARCHIVED = "ARCHIVED" # В архиве, не видна кандидатам
-
-
 class Vacancy(Base):
     __tablename__ = "vacancies"
 
@@ -28,11 +19,9 @@ class Vacancy(Base):
     soft_skills = Column(Text)
     education = Column(String)
     what_we_offer = Column(Text)
-    status = Column(Enum(VacancyStatus), nullable=False, default=VacancyStatus.DRAFT)
 
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     owner = relationship("User", back_populates="vacancies")
-    tags = relationship("VacancyTag", back_populates="vacancy", cascade="all, delete-orphan")
     evaluation_criteria = relationship("EvaluationCriterion", back_populates="vacancy", cascade="all, delete-orphan")
     applications = relationship("Application", back_populates="vacancy", cascade="all, delete-orphan")
 

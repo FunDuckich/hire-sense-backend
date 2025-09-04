@@ -30,7 +30,6 @@ from app.models.application import Application
 from app.models.screening import ApplicationScreeningResult
 from app.models.interview import InterviewSession, InterviewTranscript
 from app.models.report import InterviewReport
-from app.models.vacancy_tag import VacancyTag
 
 target_metadata = Base.metadata
 
