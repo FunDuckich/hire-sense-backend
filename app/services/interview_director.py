@@ -1,8 +1,7 @@
 import asyncio
-import json
 
 from sqlalchemy.orm import Session, joinedload
-from app.models.interview import TranscriptRole
+from app.models.interview import TranscriptRole, InterviewStatus
 from app.repositories.interview_repository import InterviewRepository
 from app.services import tts_service, llm_service
 
