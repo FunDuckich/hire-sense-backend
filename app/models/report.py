@@ -8,7 +8,6 @@ class InterviewReport(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Оставляем только одно поле для хранения результата анализа от GPT
     analysis_result = Column(JSON, nullable=False)
 
     session_id = Column(Integer, ForeignKey("interview_sessions.id"), nullable=False, unique=True)

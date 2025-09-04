@@ -6,6 +6,8 @@ from app.models.interview import TranscriptRole
 from app.repositories.interview_repository import InterviewRepository
 from app.services import tts_service, llm_service
 
+import time
+from app.core.config import settings
 
 class InterviewDirector:
     def __init__(self, session_id: int, db: Session):
@@ -18,8 +20,10 @@ class InterviewDirector:
         self.llm_service = llm_service
         self.dialogue_history = []
 
+        self.start_time = time.time()
+        self.max_duration_seconds = settings.MAX_INTERVIEW_DURATION_SECONDS
+
         self.context = self._load_context()
-        # --------------------
 
         self._initialize_history()
         self.is_finished_correctly = False
@@ -88,29 +92,31 @@ class InterviewDirector:
         return audio_data, greeting_text
 
     async def handle_candidate_response(self, text: str) -> tuple[bytes | None, str]:
-        """
-        Обрабатывает текстовый ответ кандидата, решает, задать ли следующий вопрос
-        или завершить интервью, и возвращает аудио и текст ответа аватара.
-        """
-        print(f"[Director] Обработка ответа кандидата для сессии {self.session_id}: '{text}'")
+        print(f"[Director] Обработка ответа кандидата: '{text}'")
 
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.CANDIDATE, message=text
         )
         self.dialogue_history.append({"role": "user", "content": text})
 
-        question_answer_pairs = (len(self.dialogue_history) - 2) // 2
-
-        MAX_QUESTIONS_PER_INTERVIEW = 5
-
-        if question_answer_pairs >= MAX_QUESTIONS_PER_INTERVIEW:
-            print(f"[Director] Достигнут лимит вопросов ({MAX_QUESTIONS_PER_INTERVIEW}). Завершение интервью.")
-            return await self._get_final_phrase()
-
-        print(f"[Director] Генерация следующего вопроса...")
-
         loop = asyncio.get_running_loop()
 
+        if time.time() - self.start_time > self.max_duration_seconds:
+            print(f"[Director] Превышен лимит времени ({self.max_duration_seconds} сек). Завершение интервью.")
+            return await self._get_final_phrase()
+
+        completion_status = await loop.run_in_executor(
+            None,
+            llm_service.check_interview_completion,
+            self.dialogue_history,
+            self.context.get("vacancy_details", {})
+        )
+
+        if completion_status == "FINISH":
+            print("[Director] LLM решила, что вся информация собрана. Завершение интервью.")
+            return await self._get_final_phrase()
+
+        print("[Director] Интервью продолжается. Генерация следующего вопроса...")
         next_question = await loop.run_in_executor(
             None,
             llm_service.get_interview_response,
@@ -119,11 +125,8 @@ class InterviewDirector:
             self.context.get("screening_result", {})
         )
 
-        if not next_question:
-            next_question = "Понятно, спасибо. Расскажите, пожалуйста, о проекте, которым вы больше всего гордитесь."
-            print(f"[Director] LLM не вернул ответ, используем запасной вопрос.")
 
-        print(f"[Director] Сгенерирован следующий вопрос: '{next_question}'")
+        print(f"[Director] Ответ LLM: '{next_question}'")
 
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.AVATAR, message=next_question
@@ -156,20 +159,17 @@ class InterviewDirector:
         self.interview_repo.update_session_status(self.session_id, new_status)
 
     async def _get_final_phrase(self) -> tuple[bytes | None, str]:
-        """Генерирует финальную реплику и помечает интервью как завершенное."""
-        final_text = (
-            f"Спасибо, {self.context.get('candidate_name')}, у меня на этом все. "
-            "Интервью завершено. Мы свяжемся с вами по результатам. Всего доброго!"
-        )
-        print(f"[Director] Завершение интервью для сессии {self.session_id}")
-
         self.is_finished_correctly = True
+        final_text = (
+            f"Спасибо, {self.context.get('candidate_name')}. На этом у меня все вопросы закончились. "
+            "Мы свяжемся с вами в ближайшее время. Всего доброго!"
+        )
 
         self.interview_repo.add_transcript_entry(
             session_id=self.session_id, role=TranscriptRole.AVATAR, message=final_text
         )
+        self.dialogue_history.append({"role": "assistant", "content": final_text})
 
-        import asyncio
         loop = asyncio.get_running_loop()
         audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, final_text)
 
