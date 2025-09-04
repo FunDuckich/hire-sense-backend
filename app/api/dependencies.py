@@ -2,17 +2,14 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
+
 from app.core.database import SessionLocal
 from app.core.config import settings
 from app.schemas.token import TokenData
 from app.models.user import User, Role
 from app.repositories.user_repository import UserRepository
-from app.services.speech_analytics_service import SpeechAnalyticsService
-from app.services.storage_service import AudioStorageService, LocalStorageService
-from app.services.speech_sense_service import speech_sense_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-audio_storage_service: AudioStorageService = LocalStorageService()
 
 
 def get_db():
@@ -49,24 +46,3 @@ def get_current_hr_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != Role.HR:
         raise HTTPException(status_code=403, detail="The user doesn't have enough privileges")
     return current_user
-
-
-def get_current_candidate_user(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != Role.CANDIDATE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user doesn't have enough privileges"
-        )
-    return current_user
-
-
-def get_audio_storage_service() -> AudioStorageService:
-    return audio_storage_service
-
-
-def get_speech_analytics_service() -> SpeechAnalyticsService:
-    return speech_sense_service
-
-
-def get_speech_analytics_service() -> SpeechAnalyticsService:
-    return speech_sense_service

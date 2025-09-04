@@ -57,3 +57,12 @@ class InterviewRepository:
             self.db.commit()
             self.db.refresh(db_session)
         return db_session
+
+    def update_session_status(self, session_id: int, status: InterviewStatus) -> InterviewSession | None:
+        db_session = self.db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+        if db_session:
+            db_session.status = status
+            self.db.add(db_session)
+            self.db.commit()
+            self.db.refresh(db_session)
+        return db_session

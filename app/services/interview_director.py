@@ -133,10 +133,27 @@ class InterviewDirector:
         audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, next_question)
 
         return audio_data, next_question
-    async def end_interview(self):
-        print(f"[Director] Ending interview for session {self.session_id}")
-        # TODO Здесь можно добавить логику обновления статуса сессии на COMPLETED
-        pass
+
+    def is_interview_finished(self) -> bool:
+        """Проверяет, завершен ли диалог по логике (например, достигнут ли лимит вопросов)."""
+        # Пока что заглушка, которая должна быть реализована Б2.
+        # Допустим, мы считаем интервью завершенным, если в истории 10 реплик.
+        return len(self.dialogue_history) >= 10  # Заглушка: если 10 реплик, считаем, что пора
+
+    def end_interview(self):
+        """
+        Обновляет статус сессии, исходя из того, как она завершилась.
+        Вызывается при закрытии WebSocket.
+        """
+        if self.is_finished_correctly:
+            new_status = InterviewStatus.COMPLETED
+            print(f"[Director] Интервью {self.session_id} завершено успешно. Статус: {new_status.value}")
+        else:
+            # Сюда попадаем, если произошел WebSocketDisconnect до штатного завершения
+            new_status = InterviewStatus.ERROR  # Используем ERROR для обозначения нештатного завершения
+            print(f"[Director] Интервью {self.session_id} завершено нештатно. Статус: {new_status.value}")
+
+        self.interview_repo.update_session_status(self.session_id, new_status)
 
     async def _get_final_phrase(self) -> tuple[bytes | None, str]:
         """Генерирует финальную реплику и помечает интервью как завершенное."""
