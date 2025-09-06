@@ -1,7 +1,13 @@
 import enum
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+
+
+class VacancyStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    ARCHIVED = "ARCHIVED"
 
 
 class Vacancy(Base):
