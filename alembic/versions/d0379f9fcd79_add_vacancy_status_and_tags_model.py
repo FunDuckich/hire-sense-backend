@@ -51,6 +51,7 @@ def upgrade() -> None:
                                          sa.Enum('DRAFT', 'PARSING', 'PREPARING_TAGS', 'PENDING_REVIEW', 'PUBLISHED',
                                                  'ARCHIVED', name='vacancystatus'), nullable=False,
                                          server_default='DRAFT'))
+    op.add_column('vacancies', sa.Column('complexity', sa.String(length=50), nullable=True))
     # ### end Alembic commands ###
 
 

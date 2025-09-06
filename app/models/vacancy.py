@@ -20,6 +20,9 @@ class Vacancy(Base):
     education = Column(String)
     what_we_offer = Column(Text)
 
+    complexity = Column(String(50), nullable=True)
+    status = Column(SQLAlchemyEnum(VacancyStatus), nullable=False, default=VacancyStatus.DRAFT)
+
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     owner = relationship("User", back_populates="vacancies")
     evaluation_criteria = relationship("EvaluationCriterion", back_populates="vacancy", cascade="all, delete-orphan")
