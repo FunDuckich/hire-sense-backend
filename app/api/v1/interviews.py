@@ -4,7 +4,6 @@ import asyncio
 import json
 from datetime import datetime
 import pytz
-
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -93,17 +92,34 @@ async def websocket_endpoint(
         while not director.is_finished_correctly:
 
             audio_chunks = []
+            has_started_speaking = False
             while True:
-                message = await websocket.receive()
-                if "bytes" in message:
-                    audio_chunks.append(message["bytes"])
-                elif "text" in message:
-                    try:
-                        data = json.loads(message["text"])
-                        if data.get("type") == "stream_end":
-                            break
-                    except json.JSONDecodeError:
-                        print(f"Получено не-JSON текстовое сообщение: {message['text']}")
+                try:
+                    message = await asyncio.wait_for(websocket.receive(), timeout=10.0)
+
+                    if "bytes" in message:
+                        has_started_speaking = True
+                        audio_chunks.append(message["bytes"])
+                    elif "text" in message:
+                        try:
+                            data = json.loads(message["text"])
+                            if data.get("type") == "stream_end":
+                                break
+                        except json.JSONDecodeError:
+                            print(f"Получено не-JSON текстовое сообщение: {message['text']}")
+
+                except asyncio.TimeoutError:
+                    if not has_started_speaking:
+                        print("[WebSocket] Кандидат долго молчит. Отправка поддерживающей фразы.")
+                        text_to_say = "Не торопитесь, я подожду. Пожалуйста, соберитесь с мыслями."
+                        audio_data = tts_service.synthesize_speech(text_to_say)
+                        if audio_data:
+                            audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+                            await websocket.send_json(
+                                {"type": "avatar_speech", "text": text_to_say, "audio_b64": audio_b64})
+                    else:
+                        print("[WebSocket] Длинная пауза в середине речи. Считаем фразу оконченной.")
+                        break
 
             recognized_text = ""
             if audio_chunks:
