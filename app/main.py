@@ -38,7 +38,7 @@ app.include_router(vacancies_v1.router, prefix="/api/v1/vacancies", tags=["Vacan
 app.include_router(applications_v1.router, prefix="/api/v1", tags=["Applications"])
 app.include_router(interviews_v1.router, prefix="/api/v1", tags=["Interviews"])
 app.include_router(reports_v1.router, prefix="/api/v1", tags=["Reports"])
-
+app.include_router(reports_v1.router, prefix="/api/v1", tags=["Reports"])
 
 @app.get("/")
 def read_root():

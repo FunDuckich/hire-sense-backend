@@ -24,7 +24,7 @@ class InterviewDirector:
         self._initialize_history()
 
         self.irrelevant_answer_count = 0
-        self.MAX_IRRELEVANT_ANSWERS = 2
+        self.MAX_IRRELEVANT_ANSWERS = settings.MAX_IRRELEVANT_ANSWERS
 
         self.force_terminated = False
         self.is_finished_correctly = False
@@ -104,6 +104,9 @@ class InterviewDirector:
         if time.time() - self.start_time > self.max_duration_seconds:
             return self._get_final_phrase()
 
+        if time.time() - self.start_time > self.max_duration_seconds:
+            return self._get_final_phrase(reason='time_limit')
+
         completion_status = llm_service.check_interview_completion(
             self.dialogue_history,
             self.context.get("vacancy_details", {}),
@@ -122,9 +125,13 @@ class InterviewDirector:
         self._record_message(next_question, TranscriptRole.AVATAR)
         return next_question
 
-    def _get_final_phrase(self) -> str:
+    def _get_final_phrase(self, reason: str = 'normal') -> str:
         self.is_finished_correctly = True
-        final_text = f"Спасибо, {self.context.get('candidate_name')}. На этом у меня все вопросы. Всего доброго!"
+        final_text = llm_service.generate_closing_phrase(
+            candidate_name=self.context.get('candidate_name'),
+            dialogue_history=self.dialogue_history,
+            reason=reason
+        )
         self._record_message(final_text, TranscriptRole.AVATAR)
         return final_text
 
@@ -134,9 +141,16 @@ class InterviewDirector:
         return text_to_say
 
     def _terminate_for_behavior(self, reason: str) -> str:
-        text_to_say = "Я вынужден прервать интервью из-за использования недопустимой лексики. Всего доброго." \
-            if reason == "toxic" else \
-            "К сожалению, мы не можем продолжить, так как не удается получить ответы на заданные вопросы. Интервью завершено."
+        if reason == "toxic":
+            text_to_say = "Я вынужден прервать интервью из-за использования недопустимой лексики. Всего доброго."
+        elif reason == "off_topic":
+            last_question = self.dialogue_history[-2].get("text", "")
+            text_to_say = llm_service.generate_moderation_phrase(
+                reason='final_warning',
+                last_question=last_question
+            )
+        else:
+            text_to_say = "По техническим причинам интервью завершено."
 
         self.force_terminated = True
         self._record_message(text_to_say, TranscriptRole.AVATAR)

@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.user import User
-from app.api.dependencies import get_db, get_current_user
+from app.api.dependencies import get_db, get_current_user, get_current_candidate_user
 from app.repositories.application_repository import ApplicationRepository
 from app.services.resume_parser import parse_resume
 from app.repositories.vacancy_repository import VacancyRepository
@@ -14,14 +14,9 @@ from app.api.dependencies import get_current_hr_user
 from app.schemas.application import ApplicationDetailsOut, ApplicationCreateOut, ApplicationForCandidateOut
 from app.services.email_service import email_service
 from app.background_tasks import run_resume_screening
+from starlette.websockets import WebSocketState
 
 router = APIRouter()
-
-
-def get_current_candidate_user(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "CANDIDATE":
-        raise HTTPException(status_code=403, detail="The user doesn't have enough privileges")
-    return current_user
 
 
 @router.post(
