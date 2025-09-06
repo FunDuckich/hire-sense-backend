@@ -153,10 +153,11 @@ def analyze_resume(vacancy_details: dict, resume_md: str) -> dict | None:
     return _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.4)
 
 
-def get_interview_response(history: list[dict], vacancy_details: dict, resume_summary: dict) -> str:
+def get_interview_response(history: list[dict], vacancy_details: dict, resume_summary: dict, complexity: str) -> str:
     system_prompt = (
-        "Ты — HR-аватар Алекс. Веди первичное собеседование. Будь профессионален, вежлив, дружелюбен. "
-        "Задавай по ОДНОМУ открытому вопросу за раз. Твоя цель — раскрыть опыт кандидата. "
+        f"Ты — HR-аватар Алекс. Веди первичное IT-собеседование на позицию с ожидаемым уровнем кандидата: '{complexity}'. "
+        "Будь профессионален, вежлив. Задавай по ОДНОМУ открытому вопросу за раз. "
+        "Твоя цель — раскрыть опыт кандидата. Адаптируй сложность вопросов под указанный уровень. "
         "Если ответ короткий, задай уточняющий вопрос по той же теме. Не повторяйся."
     )
     vacancy_context = json.dumps(vacancy_details, ensure_ascii=False, indent=2)
@@ -186,9 +187,11 @@ def get_interview_response(history: list[dict], vacancy_details: dict, resume_su
     return response_text
 
 
-def analyze_interview_transcript(transcript: str, vacancy_details: dict, screening_report: dict) -> dict | None:
+def analyze_interview_transcript(transcript: str, vacancy_details: dict, screening_report: dict,
+                                 complexity: str) -> dict | None:
     system_prompt = (
-        "Ты — ведущий HR-эксперт в IT-рекрутинге. Проведи глубокий, объективный анализ транскрипции интервью. "
+        "Ты — ведущий HR-эксперт в IT-рекрутинге. Проведи глубокий анализ транскрипции интервью "
+        f"на позицию с ожидаемым уровнем кандидата: '{complexity}'. "
         "Твоя задача — оценить hard skills и soft skills кандидата исключительно на основе текста его ответов. "
         "Ответ ДОЛЖЕН БЫТЬ ТОЛЬКО в формате валидного JSON. Без Markdown и лишних слов."
     )
@@ -250,10 +253,10 @@ def analyze_interrupted_transcript(transcript: str) -> dict | None:
     return _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.3)
 
 
-def check_interview_completion(dialogue_history: list[dict], vacancy_details: dict) -> str:
+def check_interview_completion(dialogue_history: list[dict], vacancy_details: dict, complexity: str) -> str:
     system_prompt = (
-        "Ты — HR-супервайзер, наблюдающий за ходом интервью. Твоя задача — решить, нужно ли продолжать диалог. "
-        "Проанализируй диалог и ключевые требования вакансии. "
+        f"Ты — HR-супервайзер. Ты наблюдаешь за ходом интервью на позицию уровня '{complexity}'. "
+        "Твоя задача — решить, нужно ли продолжать диалог. "
         "Ответь ТОЛЬКО ОДНИМ СЛОВОМ: CONTINUE или FINISH."
     )
 
