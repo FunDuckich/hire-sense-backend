@@ -46,3 +46,10 @@ class ApplicationRepository:
         ).where(Application.vacancy_id == vacancy_id)
 
         return self.db.execute(statement).unique().scalars().all()
+
+    def get_applications_for_user(self, user_id: int) -> list[Application]:
+        statement = select(Application).options(
+            joinedload(Application.vacancy)
+        ).where(Application.user_id == user_id).order_by(Application.created_at.desc())
+
+        return self.db.execute(statement).unique().scalars().all()

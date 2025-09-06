@@ -1,6 +1,6 @@
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from app.models.interview import InterviewSession, InterviewStatus, TranscriptRole, InterviewTranscript
 from app.models.application import Application
@@ -52,7 +52,8 @@ class InterviewRepository:
 
         return self.db.execute(statement).unique().scalar_one_or_none()
 
-    def update_session_completion_status(self, session_id: int, is_completed_correctly: bool) -> InterviewSession | None:
+    def update_session_completion_status(self, session_id: int,
+                                         is_completed_correctly: bool) -> InterviewSession | None:
         db_session = self.db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         if db_session:
             db_session.is_completed_correctly = is_completed_correctly

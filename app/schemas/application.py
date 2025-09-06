@@ -6,6 +6,21 @@ from .report import InterviewReportOut
 from .user import UserOut
 from app.models.application import ApplicationStatus
 from app.models.application import Application as ApplicationModel
+from .vacancy import VacancyOut
+
+
+class ApplicationCreateOut(BaseModel):
+    application_id: int
+    message: str
+
+
+class ApplicationForCandidateOut(BaseModel):
+    id: int
+    status: ApplicationStatus
+    vacancy: VacancyOut
+
+    class Config:
+        from_attributes = True
 
 
 class ApplicationDetailsOut(BaseModel):

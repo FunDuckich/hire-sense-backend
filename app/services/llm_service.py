@@ -261,20 +261,27 @@ def check_interview_completion(dialogue_history: list[dict], vacancy_details: di
     )
 
     criteria = [crit.get("criterion") for crit in vacancy_details.get("evaluation_criteria", [])]
+    tech_stack = vacancy_details.get("tech_stack", "")
+    hard_skills = vacancy_details.get("hard_skills", "")
 
     user_prompt = f"""
-    КЛЮЧЕВЫЕ ТРЕБОВАНИЯ ВАКАНСИИ, которые нужно проверить:
-    - {", ".join(criteria) if criteria else "Общие компетенции"}
+        КЛЮЧЕВЫЕ ТРЕБОВАНИЯ ВАКАНСИИ, которые нужно проверить:
+        - Обязательные критерии: {", ".join(criteria) if criteria else "Не указаны"}
+        - Технологический стек: {tech_stack}
+        - Ключевые навыки (Hard Skills): {hard_skills}
 
-    ИСТОРИЯ ДИАЛОГА:
-    ---
-    {json.dumps(dialogue_history, ensure_ascii=False, indent=2)}
-    ---
+        ИСТОРИЯ ДИАЛОГА:
+        ---
+        {json.dumps(dialogue_history, ensure_ascii=False, indent=2)}
+        ---
+        
+        ЗАДАЧА: Выполни пошаговый анализ и прими решение.
+        1. ШАГ 1: Внимательно прочитай историю диалога и определи, какие из КЛЮЧЕВЫХ ТРЕБОВАНИЙ уже были обсуждены.
+        2. ШАГ 2: Определи, какие из КЛЮЧЕВЫХ ТРЕБОВАНИЙ еще НЕ были обсуждены.
+        3. ШАГ 3: Прими решение. Ответь FINISH **только в том случае, если список необсужденных требований ПУСТ**. Во всех остальных случаях отвечай CONTINUE.
 
-    ЗАДАЧА: Покрыты ли в диалоге все ключевые требования?
-    - Если нужно задать еще вопросы, чтобы раскрыть темы глубже или покрыть все требования, ответь: CONTINUE.
-    - Если кандидат уже предоставил достаточно информации по всем ключевым требованиям, ответь: FINISH.
-    """
+        Твой ответ должен быть ТОЛЬКО ОДНИМ СЛОВОМ: CONTINUE или FINISH.
+        """
 
     decision = _call_yandex_gpt(system_prompt, user_prompt, temperature=0.1)
 
