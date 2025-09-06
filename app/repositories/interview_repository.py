@@ -62,3 +62,10 @@ class InterviewRepository:
             self.db.commit()
             self.db.refresh(db_session)
         return db_session
+
+    def get_transcript_for_session(self, session_id: int) -> list[InterviewTranscript]:
+        statement = select(InterviewTranscript).where(
+            InterviewTranscript.session_id == session_id
+        ).order_by(InterviewTranscript.timestamp.asc())
+
+        return self.db.execute(statement).scalars().all()

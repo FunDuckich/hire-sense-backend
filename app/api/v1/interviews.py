@@ -9,16 +9,18 @@ from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketState
 
 from app.core.database import SessionLocal
+from app.core.config import settings
+from app.models.interview import InterviewStatus
+from app.models.user import User
 from app.repositories.interview_repository import InterviewRepository
 from app.repositories.application_repository import ApplicationRepository
 from app.models.application import ApplicationStatus
 from app.schemas.interview import InterviewSessionStartOut
 from app.services.interview_director import InterviewDirector
-from app.services import stt_service, tts_service
+from app.services import stt_service, tts_service, llm_service
 from app.background_tasks import run_interview_analysis
-from app.api.dependencies import get_db, get_current_candidate_user, get_current_user_ws
-from app.models.user import User
-from app.models.interview import InterviewStatus
+from app.api.dependencies import get_db, get_current_candidate_user, get_current_user_ws # get_current_candidate_user здесь уже не используется напрямую, но пусть будет
+
 
 router = APIRouter()
 
@@ -58,19 +60,19 @@ def start_interview_session(
     return {"interview_session_id": session.id, "status": session.status}
 
 
-async def audio_stream_from_websocket(websocket: WebSocket):
+async def _send_avatar_speech(websocket: WebSocket, text: str):
     try:
-        while True:
-            yield await websocket.receive_bytes()
-    except WebSocketDisconnect:
-        return
-
-
-async def _say(websocket: WebSocket, text: str):
-    audio_data = await asyncio.to_thread(tts_service.synthesize_speech, text)
-    if audio_data:
-        audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-        await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
+        # Используем asyncio.to_thread для запуска синхронной функции tts_service.synthesize_speech в отдельном потоке
+        audio_data = await asyncio.to_thread(tts_service.synthesize_speech, text)
+        if audio_data:
+            audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+            await websocket.send_json({
+                "type": "avatar_speech",
+                "text": text,
+                "audio_b64": audio_b64
+            })
+    except Exception as e:
+        print(f"Ошибка при отправке речи аватара: {e}")
 
 
 @router.websocket("/ws/{session_id}")
@@ -95,15 +97,9 @@ async def websocket_endpoint(
         print(f"User {current_user.email} successfully connected to WebSocket session {session_id}.")
         director = InterviewDirector(session_id=session_id, db=db)
 
-        # --- ШАГ 1: ПОЛУЧАЕМ ТЕКСТ ---
         text_to_say = director.start()
 
-        # --- ШАГ 2: ДЕЙСТВУЕМ (TTS + SEND) ---
-        loop = asyncio.get_running_loop()
-        audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, text_to_say)
-        if audio_data:
-            audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-            await websocket.send_json({"type": "avatar_speech", "text": text_to_say, "audio_b64": audio_b64})
+        await _send_avatar_speech(websocket, text_to_say)
 
         while not (director.is_finished_correctly or director.force_terminated):
             audio_chunks = []
@@ -111,7 +107,7 @@ async def websocket_endpoint(
 
             while True:
                 try:
-                    message = await asyncio.wait_for(websocket.receive(), timeout=15.0)
+                    message = await asyncio.wait_for(websocket.receive(), timeout=settings.CANDIDATE_SILENCE_TIMEOUT_SECONDS)
                     if "bytes" in message:
                         has_started_speaking = True
                         audio_chunks.append(message["bytes"])
@@ -122,13 +118,8 @@ async def websocket_endpoint(
                 except asyncio.TimeoutError:
                     if not has_started_speaking and websocket.client_state == WebSocketState.CONNECTED:
                         print("[WebSocket] Кандидат долго молчит. Отправка поддерживающей фразы.")
-                        text_to_say_support = "Не торопитесь, я подожду. Пожалуйста, соберитесь с мыслями."
-                        audio_data_support = await loop.run_in_executor(None, tts_service.synthesize_speech,
-                                                                        text_to_say_support)
-                        if audio_data_support:
-                            await websocket.send_json({"type": "avatar_speech", "text": text_to_say_support,
-                                                       "audio_b64": base64.b64encode(audio_data_support).decode(
-                                                           'utf-8')})
+                        text_to_say_support = llm_service.generate_support_phrase(director.dialogue_history)
+                        await _send_avatar_speech(websocket, text_to_say_support)
                     else:
                         break
 
@@ -149,10 +140,7 @@ async def websocket_endpoint(
             else:
                 text_to_say_next = "Извините, я вас не расслышал. Можете повторить, пожалуйста?"
 
-            audio_data_next = await loop.run_in_executor(None, tts_service.synthesize_speech, text_to_say_next)
-            if audio_data_next:
-                await websocket.send_json({"type": "avatar_speech", "text": text_to_say_next,
-                                           "audio_b64": base64.b64encode(audio_data_next).decode('utf-8')})
+            await _send_avatar_speech(websocket, text_to_say_next)
 
         print("Основной цикл диалога завершен. Отправка сигнала о закрытии клиенту.")
         await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)

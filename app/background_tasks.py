@@ -9,6 +9,7 @@ from app.services import llm_service
 from app.models.application import ApplicationStatus
 from app.services.email_service import email_service
 from datetime import datetime, timedelta, timezone
+from app.core.config import settings
 
 
 def run_resume_screening(application_id: int):
@@ -50,7 +51,7 @@ def run_resume_screening(application_id: int):
         screening_repo.create_screening_result(application_id, analysis_result)
         score = analysis_result.get("overall_match_score", 0)
         screening_threshold = 0
-        new_status = ApplicationStatus.INTERVIEW_PENDING if score >= screening_threshold else ApplicationStatus.REJECTED
+        new_status = ApplicationStatus.INTERVIEW_PENDING if score >= settings.SCREENING_THRESHOLD else ApplicationStatus.REJECTED
 
         updated_application = app_repo.update_application_status(application_id, new_status)
 
