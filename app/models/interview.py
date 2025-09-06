@@ -24,6 +24,7 @@ class InterviewSession(Base):
     status = Column(Enum(InterviewStatus), default=InterviewStatus.SCHEDULED, nullable=False)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_completed_correctly = Column(Boolean, default=False, nullable=False)
 
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=False, unique=True)

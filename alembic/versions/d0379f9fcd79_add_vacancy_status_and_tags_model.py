@@ -46,6 +46,7 @@ def upgrade() -> None:
                     )
     op.create_index(op.f('ix_interview_reports_id'), 'interview_reports', ['id'], unique=False)
     op.add_column('interview_sessions', sa.Column('is_completed_correctly', sa.Boolean(), nullable=False))
+    op.add_column('interview_sessions', sa.Column('expires_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False))
     op.add_column('vacancies', sa.Column('status',
                                          sa.Enum('DRAFT', 'PARSING', 'PREPARING_TAGS', 'PENDING_REVIEW', 'PUBLISHED',
                                                  'ARCHIVED', name='vacancystatus'), nullable=False,
