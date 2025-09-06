@@ -21,18 +21,11 @@ class ApplicationRepository:
         return db_application
 
     def get_application_by_id(self, application_id: int) -> Application | None:
-        """
-        Получает один отклик со всеми связанными данными для детального отчета.
-        """
         statement = select(Application).options(
             joinedload(Application.candidate),
             joinedload(Application.vacancy),
             joinedload(Application.screening_result),
-
-            joinedload(Application.interview_session).options(
-                joinedload(InterviewSession.report)
-            )
-
+            joinedload(Application.interview_session).joinedload(InterviewSession.report)
         ).where(Application.id == application_id)
 
         return self.db.execute(statement).unique().scalar_one_or_none()

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     YC_SERVICE_ACCOUNT_ID: str
     YC_KEY_ID: str
     YC_FOLDER_ID: str
+    YC_SA_KEY_FILE_PATH: str = "authorized_key.json"
 
     SMTP_SERVER: str
     SMTP_PORT: int
@@ -23,3 +24,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+print(f"SECRET_KEY: {settings.SECRET_KEY}, ALGORITHM: {settings.ALGORITHM}")

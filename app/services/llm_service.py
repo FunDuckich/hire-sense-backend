@@ -81,7 +81,7 @@ def _call_yandex_gpt(system_prompt: str, user_prompt: str, temperature: float = 
         "Authorization": f"Bearer {iam_token}",
     }
     body = {
-        "modelUri": f"gpt://{settings.YC_FOLDER_ID}/yandexgpt-pro/latest",
+        "modelUri": f"gpt://{settings.YC_FOLDER_ID}/yandexgpt/latest",
         "completionOptions": {
             "stream": False,
             "temperature": temperature,
@@ -279,3 +279,20 @@ def check_interview_completion(dialogue_history: list[dict], vacancy_details: di
         return "FINISH"
 
     return "CONTINUE"
+
+
+def is_answer_relevant(last_question: str, last_answer: str) -> bool:
+    system_prompt = (
+        "Ты — AI-аналитик. Твоя задача — оценить релевантность ответа на вопрос. "
+        "Ответь ТОЛЬКО ОДНИМ СЛОВОМ: YES или NO."
+    )
+    user_prompt = f"""
+    ВОПРОС: "{last_question}"
+    ОТВЕТ: "{last_answer}"
+
+    ЗАДАЧА: Является ли ОТВЕТ релевантным ответом на ВОПРОС?
+    - Если да, или если это общая фраза, но по теме, ответь: YES.
+    - Если ответ совершенно не по теме или является явным уклонением, ответь: NO.
+    """
+    response = _call_yandex_gpt(system_prompt, user_prompt, temperature=0.0)
+    return response and "YES" in response.upper()
