@@ -1,21 +1,17 @@
 from pydantic import BaseModel, constr, conint
-
+from typing import List
 
 class EvaluationCriterionBase(BaseModel):
     criterion: constr(min_length=1)
     weight: conint(gt=0, le=100)
 
-
 class EvaluationCriterionCreate(EvaluationCriterionBase):
     pass
 
-
 class EvaluationCriterionOut(EvaluationCriterionBase):
     id: int
-
     class Config:
         from_attributes = True
-
 
 class VacancyBase(BaseModel):
     job_title: str
@@ -29,19 +25,17 @@ class VacancyBase(BaseModel):
     soft_skills: str | None = None
     education: str | None = None
     what_we_offer: str | None = None
-
+    complexity: str | None = None
 
 class VacancyCreate(VacancyBase):
-    evaluation_criteria: list[EvaluationCriterionCreate]
-
+    evaluation_criteria: List[EvaluationCriterionCreate]
 
 class VacancyOut(VacancyBase):
     id: int
-    evaluation_criteria: list[EvaluationCriterionOut]
-
+    owner_id: int
+    evaluation_criteria: List[EvaluationCriterionOut]
     class Config:
         from_attributes = True
-
 
 class VacancyUpdate(BaseModel):
     job_title: str | None = None
@@ -55,5 +49,4 @@ class VacancyUpdate(BaseModel):
     soft_skills: str | None = None
     education: str | None = None
     what_we_offer: str | None = None
-    # обновление критериев - более сложная логика, пока оставим
-    # evaluation_criteria: list[EvaluationCriterionCreate] | None = None
+    complexity: str | None = None

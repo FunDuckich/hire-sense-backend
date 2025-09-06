@@ -13,7 +13,6 @@ from app.models.interview import InterviewSession, InterviewTranscript
 from app.models.screening import ApplicationScreeningResult
 from app.models.report import InterviewReport
 
-import os
 import sys
 
 config = context.config
@@ -34,11 +33,17 @@ from app.models.report import InterviewReport
 target_metadata = Base.metadata
 
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+from dotenv import load_dotenv
+import os
 
+project_root = os.path.dirname(config.config_file_name)
+dotenv_path = os.path.join(project_root, '.env')
+
+if os.path.exists(dotenv_path):
+    print(f"Загрузка переменных окружения из: {dotenv_path}")
+    load_dotenv(dotenv_path=dotenv_path)
+else:
+    print(f"ВНИМАНИЕ: файл .env не найден по пути {dotenv_path}")
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.

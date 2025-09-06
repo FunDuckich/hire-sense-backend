@@ -20,7 +20,11 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str
     EMAIL_SENDER: str
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding='utf-8',
+        env_file_relative_path="../../.env"
+    )
 
 
 settings = Settings()
