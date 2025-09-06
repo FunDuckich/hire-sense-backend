@@ -1,27 +1,12 @@
 import asyncio
 import grpc
-import json
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
-import yandexcloud
-from app.core.config import settings
-
-# try:
-#    with open(settings.YC_SA_KEY_FILE_PATH, 'r', encoding='utf-8') as key_file:
-#        sa_key_data = json.load(key_file)
-# except Exception as e:
-#    raise RuntimeError(f"Не удалось прочитать файл ключа по пути: {settings.YC_SA_KEY_FILE_PATH}. Ошибка: {e}")
-#
-# sdk = yandexcloud.SDK(service_account_key=sa_key_data)
-#
-# recognizer_stub = sdk.client(stt_service_pb2_grpc.RecognizerStub)
-
 from app.services.llm_service import get_iam_token
 
 
 def get_stt_stub():
     cred = grpc.ssl_channel_credentials()
-    # Используем grpc.aio.secure_channel для асинхронной работы
     channel = grpc.aio.secure_channel('stt.api.cloud.yandex.net:443', cred)
     return stt_service_pb2_grpc.RecognizerStub(channel)
 
@@ -35,8 +20,8 @@ SESSION_OPTIONS = stt_pb2.StreamingOptions(
         ),
         text_normalization=stt_pb2.TextNormalizationOptions(
             text_normalization=stt_pb2.TextNormalizationOptions.TextNormalization.TEXT_NORMALIZATION_ENABLED,
-            profanity_filter=True,
-            literature_text=False
+            profanity_filter=False,
+            literature_text=True
         ),
         language_restriction=stt_pb2.LanguageRestrictionOptions(
             restriction_type=stt_pb2.LanguageRestrictionOptions.LanguageRestrictionType.WHITELIST,

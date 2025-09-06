@@ -296,3 +296,31 @@ def is_answer_relevant(last_question: str, last_answer: str) -> bool:
     """
     response = _call_yandex_gpt(system_prompt, user_prompt, temperature=0.0)
     return response and "YES" in response.upper()
+
+
+def analyze_candidate_behavior(dialogue_history: list[dict]) -> dict | None:
+    system_prompt = (
+        "Ты — AI-супервайзер, анализирующий диалог интервью в реальном времени. "
+        "Твоя задача — оценить поведение кандидата в его ПОСЛЕДНЕЙ реплике. "
+        "Ответ ДОЛЖЕН БЫТЬ ТОЛЬКО в формате валидного JSON."
+    )
+
+    last_exchange = dialogue_history[-2:] if len(dialogue_history) >= 2 else dialogue_history
+
+    user_prompt = f"""
+    Проанализируй ПОСЛЕДНЮЮ реплику кандидата в этом диалоге:
+    ---
+    {json.dumps(last_exchange, ensure_ascii=False, indent=2)}
+    ---
+
+    Верни JSON-объект со следующими boolean-флагами:
+    - "is_toxic": true, если кандидат использует ненормативную лексику, оскорбления или проявляет агрессию.
+    - "is_off_topic": true, если кандидат явно уклоняется от ответа на заданный аватаром вопрос или говорит на совершенно постороннюю тему.
+    - "wants_to_finish": true, если кандидат прямо просит или намекает на желание завершить интервью (например, "у меня больше нет времени", "давайте закончим").
+
+    Пример ответа: {{"is_toxic": false, "is_off_topic": true, "wants_to_finish": false}}
+    """
+
+    behavior_flags = _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.1)
+
+    return behavior_flags or {"is_toxic": False, "is_off_topic": False, "wants_to_finish": False}
