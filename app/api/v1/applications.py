@@ -13,7 +13,6 @@ from app.schemas.application import ApplicationDetailsOut
 from app.services.email_service import email_service
 from app.background_tasks import run_resume_screening
 
-
 router = APIRouter()
 
 
@@ -40,7 +39,7 @@ async def apply_for_vacancy(
         resume_md=resume_md
     )
 
-    background_tasks.add_task(run_resume_screening, application.id, db)
+    background_tasks.add_task(run_resume_screening, application.id)
 
     return {"message": "Your application has been accepted and is being processed."}
 
@@ -59,8 +58,5 @@ def read_application_details(
 
     if application.vacancy.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to access this application")
-
-    if application.screening_result:
-        application.screening_result = application.screening_result.result_json
 
     return application

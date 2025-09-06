@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api.v1 import auth as auth_v1
 from app.api.v1 import vacancies as vacancies_v1
@@ -17,6 +18,20 @@ async def lifespan(app_local: FastAPI):
 
 
 app = FastAPI(title="Hire Sense API", lifespan=lifespan)
+
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8080",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth_v1.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(vacancies_v1.router, prefix="/api/v1/vacancies", tags=["Vacancies"])

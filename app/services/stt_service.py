@@ -6,15 +6,25 @@ import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 import yandexcloud
 from app.core.config import settings
 
-try:
-    with open(settings.YC_SA_KEY_FILE_PATH, 'r', encoding='utf-8') as key_file:
-        sa_key_data = json.load(key_file)
-except Exception as e:
-    raise RuntimeError(f"Не удалось прочитать файл ключа по пути: {settings.YC_SA_KEY_FILE_PATH}. Ошибка: {e}")
+# try:
+#    with open(settings.YC_SA_KEY_FILE_PATH, 'r', encoding='utf-8') as key_file:
+#        sa_key_data = json.load(key_file)
+# except Exception as e:
+#    raise RuntimeError(f"Не удалось прочитать файл ключа по пути: {settings.YC_SA_KEY_FILE_PATH}. Ошибка: {e}")
+#
+# sdk = yandexcloud.SDK(service_account_key=sa_key_data)
+#
+# recognizer_stub = sdk.client(stt_service_pb2_grpc.RecognizerStub)
 
-sdk = yandexcloud.SDK(service_account_key=sa_key_data)
+from app.services.llm_service import get_iam_token
 
-recognizer_stub = sdk.client(stt_service_pb2_grpc.RecognizerStub)
+
+def get_stt_stub():
+    cred = grpc.ssl_channel_credentials()
+    # Используем grpc.aio.secure_channel для асинхронной работы
+    channel = grpc.aio.secure_channel('stt.api.cloud.yandex.net:443', cred)
+    return stt_service_pb2_grpc.RecognizerStub(channel)
+
 
 SESSION_OPTIONS = stt_pb2.StreamingOptions(
     recognition_model=stt_pb2.RecognitionModelOptions(
@@ -40,13 +50,25 @@ SESSION_OPTIONS = stt_pb2.StreamingOptions(
 async def generate_requests(audio_stream):
     yield stt_pb2.StreamingRequest(session_options=SESSION_OPTIONS)
 
+    has_sent_audio = False
     async for chunk in audio_stream:
         yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=chunk))
+        has_sent_audio = True
+
+    if has_sent_audio:
+        yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=b''))
 
 
 async def recognize_stream(audio_stream):
+    cred = grpc.ssl_channel_credentials()
+    channel = grpc.aio.secure_channel('stt.api.cloud.yandex.net:443', cred)
+    recognizer_stub = stt_service_pb2_grpc.RecognizerStub(channel)
+
+    iam_token = get_iam_token()
+    metadata = [('authorization', f'Bearer {iam_token}')]
+
     request_generator = generate_requests(audio_stream)
-    responses = recognizer_stub.RecognizeStreaming(request_generator)
+    responses = recognizer_stub.RecognizeStreaming(request_generator, metadata=metadata)
 
     try:
         async for response in responses:
@@ -67,3 +89,5 @@ async def recognize_stream(audio_stream):
     except grpc.aio.AioRpcError as e:
         print(f"Ошибка gRPC в STT сервисе: {e.details()}")
         yield {"type": "error", "text": f"Ошибка сервера распознавания: {e.details()}"}
+    finally:
+        await channel.close()

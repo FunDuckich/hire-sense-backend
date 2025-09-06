@@ -1,5 +1,6 @@
 import enum
 from sqlalchemy import Column, Integer, Text, Enum, ForeignKey, DateTime
+from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -28,3 +29,4 @@ class Application(Base):
     vacancy = relationship("Vacancy", back_populates="applications")
     interview_session = relationship("InterviewSession", uselist=False, back_populates="application")
     screening_result = relationship("ApplicationScreeningResult", uselist=False, back_populates="application")
+    interview_report = association_proxy("interview_session", "report")

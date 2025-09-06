@@ -1,15 +1,16 @@
 import base64
+import json
 import traceback
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-
+from app.core.database import SessionLocal
 from app.repositories.interview_repository import InterviewRepository
 from app.schemas.interview import InterviewSessionStartOut
+from app.models.interview import InterviewStatus
 from app.services.interview_director import InterviewDirector
-from app.services import stt_service
+from app.services import stt_service, tts_service
 from app.background_tasks import run_interview_analysis
-
-from app.api.dependencies import get_db, get_current_candidate_user
+from app.api.dependencies import get_db, get_current_candidate_user, get_current_user_ws
 from app.models.user import User
 
 router = APIRouter()
@@ -54,12 +55,23 @@ async def audio_stream_from_websocket(websocket: WebSocket):
 async def websocket_endpoint(
         websocket: WebSocket,
         session_id: int,
-        db: Session = Depends(get_db),
-        background_tasks: BackgroundTasks = Depends()
+        background_tasks: BackgroundTasks,
+        current_user: User = Depends(get_current_user_ws)
 ):
     await websocket.accept()
+    db: Session = SessionLocal()
     director = None
+
     try:
+        interview_repo = InterviewRepository(db)
+        session = interview_repo.get_session_with_details(session_id)
+
+        if not session or session.application.user_id != current_user.id or session.status != InterviewStatus.SCHEDULED:
+            reason = "Interview session not found, not authorized, or has invalid status."
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
+            return
+
+        print(f"User {current_user.email} successfully connected to WebSocket session {session_id}.")
         director = InterviewDirector(session_id=session_id, db=db)
 
         audio_data, text = await director.start()
@@ -67,37 +79,51 @@ async def websocket_endpoint(
             audio_b64 = base64.b64encode(audio_data).decode('utf-8')
             await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
 
-        audio_generator = audio_stream_from_websocket(websocket)
+        while not director.is_finished_correctly:
 
-        full_candidate_response = ""
-        async for result in stt_service.recognize_stream(audio_generator):
-            await websocket.send_json(result)
+            audio_chunks = []
+            while True:
+                message = await websocket.receive()
+                if "bytes" in message:
+                    audio_chunks.append(message["bytes"])
+                elif "text" in message:
+                    try:
+                        data = json.loads(message["text"])
+                        if data.get("type") == "stream_end":
+                            break
+                    except json.JSONDecodeError:
+                        print(f"Получено не-JSON текстовое сообщение: {message['text']}")
 
-            if result.get("type") in ["final", "final_refinement"]:
-                full_candidate_response += result.get("text", "") + " "
+            recognized_text = ""
+            if audio_chunks:
+                async def audio_generator():
+                    for chunk in audio_chunks:
+                        yield chunk
 
-            if result.get("type") == "final":
-                clean_response = full_candidate_response.strip()
-                if clean_response:
-                    audio_data, text = await director.handle_candidate_response(clean_response)
+                async for result in stt_service.recognize_stream(audio_generator()):
+                    await websocket.send_json(result)
+                    if result.get("type") in ["final", "final_refinement"]:
+                        recognized_text += result.get("text", "") + " "
+                recognized_text = recognized_text.strip()
 
-                    if audio_data:
-                        audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-                        await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
+            if recognized_text:
+                audio_data, text = await director.handle_candidate_response(recognized_text)
+                if audio_data:
+                    audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+                    await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
+            else:
+                text_to_say = "Извините, я вас не расслышал. Можете повторить, пожалуйста?"
+                audio_data = tts_service.synthesize_speech(text_to_say)
+                if audio_data:
+                    audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+                    await websocket.send_json({"type": "avatar_speech", "text": text_to_say, "audio_b64": audio_b64})
 
-                    if director.is_finished_correctly:
-                        print(f"[WebSocket] Директор завершил сессию {session_id} штатно. Закрываем соединение.")
-                        await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
-                        break  # Выходим из цикла for, чтобы перейти к finally
-
-                    full_candidate_response = ""
-
-    except WebSocketDisconnect:
-        print(f"Клиент отключился от сессии {session_id}.")
+    except WebSocketDisconnect as e:
+        print(f"Клиент отключился от сессии {session_id} с кодом {e.code}.")
     except Exception as e:
         print(f"Необработанная ошибка в WebSocket для сессии {session_id}:")
         traceback.print_exc()
-        if not websocket.client_state == websocket.client_state.DISCONNECTED:
+        if websocket.client_state.name != 'DISCONNECTED':
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
     finally:
         print(f"Финализация сессии {session_id}...")
@@ -106,12 +132,18 @@ async def websocket_endpoint(
                 session_id=session_id,
                 is_completed_correctly=director.is_finished_correctly
             )
-
             if session:
-                background_tasks.add_task(
-                    run_interview_analysis,
-                    session.id,
-                    session.is_completed_correctly
-                )
-                print(
-                    f"Фоновая задача анализа для сессии {session_id} запланирована. Статус завершения: {session.is_completed_correctly}")
+                # --- ВРЕМЕННЫЕ ИЗМЕНЕНИЯ ДЛЯ ОТЛАДКИ ---
+                print("!!! ОТЛАДКА: Запускаем анализ СИНХРОННО, чтобы увидеть ошибки !!!")
+                # background_tasks.add_task(
+                #     run_interview_analysis,
+                #     session.id,
+                #     session.is_completed_correctly
+                # )
+                run_interview_analysis(session.id, session.is_completed_correctly)
+                print("!!! ОТЛАДКА: Синхронный анализ завершен !!!")
+                # --- КОНЕЦ ВРЕМЕННЫХ ИЗМЕНЕНИЙ ---
+
+                print(f"Фоновая задача анализа для сессии {session_id} запланирована.")
+
+        db.close()
