@@ -8,6 +8,7 @@ from app.repositories.screening_repository import ScreeningRepository
 from app.services import llm_service
 from app.models.application import ApplicationStatus
 from app.services.email_service import email_service
+from datetime import datetime, timedelta, timezone
 
 
 def run_resume_screening(application_id: int):
@@ -17,6 +18,7 @@ def run_resume_screening(application_id: int):
         app_repo = ApplicationRepository(db)
         screening_repo = ScreeningRepository(db)
         vacancy_repo = VacancyRepository(db)
+        interview_repo = InterviewRepository(db)
 
         application = app_repo.get_application_by_id(application_id)
         if not application:
@@ -54,6 +56,13 @@ def run_resume_screening(application_id: int):
 
         if updated_application:
             if new_status == ApplicationStatus.INTERVIEW_PENDING:
+                print(f"Кандидат одобрен. Создание сессии интервью со сроком годности 7 дней.")
+                expires_at_date = datetime.now(timezone.utc) + timedelta(days=7)
+                interview_repo.create_interview_session(
+                    application_id=application.id,
+                    expires_at=expires_at_date
+                )
+                print(f"Сессия для заявки #{application.id} создана, срок истекает {expires_at_date.isoformat()}")
                 email_service.send_invitation_email(updated_application)
             else:
                 email_service.send_rejection_email(updated_application)
