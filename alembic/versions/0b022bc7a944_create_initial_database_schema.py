@@ -92,6 +92,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('application_id')
     )
+    op.add_column('interview_sessions', sa.Column('expires_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False))
     op.create_index(op.f('ix_interview_sessions_id'), 'interview_sessions', ['id'], unique=False)
     op.create_table('interview_transcripts',
     sa.Column('id', sa.Integer(), nullable=False),

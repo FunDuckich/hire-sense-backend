@@ -1,8 +1,12 @@
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, joinedload
-from app.models.interview import InterviewSession, InterviewStatus, InterviewTranscript, TranscriptRole
+from datetime import datetime
+
+from app.models.interview import InterviewSession, InterviewStatus, TranscriptRole, InterviewTranscript
 from app.models.application import Application
 from app.models.vacancy import Vacancy
+from app.models.report import InterviewReport
+from app.models.user import User
 
 
 class InterviewRepository:
@@ -12,10 +16,11 @@ class InterviewRepository:
     def get_application_by_id(self, application_id: int) -> Application | None:
         return self.db.query(Application).filter(Application.id == application_id).first()
 
-    def create_interview_session(self, application_id: int) -> InterviewSession:
+    def create_interview_session(self, application_id: int, expires_at: datetime) -> InterviewSession:
         db_session = InterviewSession(
             application_id=application_id,
-            status=InterviewStatus.SCHEDULED
+            status=InterviewStatus.SCHEDULED,
+            expires_at=expires_at
         )
         self.db.add(db_session)
         self.db.commit()
@@ -41,28 +46,18 @@ class InterviewRepository:
                     joinedload(Vacancy.evaluation_criteria)
                 ),
                 joinedload(Application.screening_result)
-            )
+            ),
+            joinedload(InterviewSession.report)
         ).where(InterviewSession.id == session_id)
 
         return self.db.execute(statement).unique().scalar_one_or_none()
 
-    def update_session_completion_status(self, session_id: int,
-                                         is_completed_correctly: bool) -> InterviewSession | None:
-        """Обновляет статус завершения сессии и время окончания."""
+    def update_session_completion_status(self, session_id: int, is_completed_correctly: bool) -> InterviewSession | None:
         db_session = self.db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         if db_session:
             db_session.is_completed_correctly = is_completed_correctly
-            db_session.ended_at = func.now()  # Устанавливаем время окончания
-            db_session.status = InterviewStatus.COMPLETED  # Меняем общий статус
-            self.db.commit()
-            self.db.refresh(db_session)
-        return db_session
-
-    def update_session_status(self, session_id: int, status: InterviewStatus) -> InterviewSession | None:
-        db_session = self.db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
-        if db_session:
-            db_session.status = status
-            self.db.add(db_session)
+            db_session.ended_at = func.now()
+            db_session.status = InterviewStatus.COMPLETED
             self.db.commit()
             self.db.refresh(db_session)
         return db_session
