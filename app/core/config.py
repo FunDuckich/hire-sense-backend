@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     MAX_IRRELEVANT_ANSWERS: int = 2
     CANDIDATE_SILENCE_TIMEOUT_SECONDS: float = 15.0
 
+    MAX_SILENCE_PROMPTS: int = 3
+
     YC_SERVICE_ACCOUNT_ID: str
     YC_KEY_ID: str
     YC_FOLDER_ID: str
