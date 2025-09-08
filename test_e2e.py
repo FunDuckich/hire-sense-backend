@@ -132,13 +132,16 @@ async def run_interview_ws(session_id, token, answers_sequence):
                 await websocket.send(json.dumps({"type": "stream_end"}))
                 print("--> Отправлен сигнал stream_end.")
 
-            # 4. Если мы прошли весь цикл (например, в сценарии 'deep' все еще могут быть вопросы),
-            # просто слушаем до закрытия.
-            print("\n--- Все ответы по сценарию отправлены. Ждем реакции сервера... ---")
+            print("\n--- Все ответы по сценарию отправлены. Ждем финальной фразы от сервера... ---")
             while True:
                 message_raw = await websocket.recv()
                 message_data = json.loads(message_raw)
                 print(f"<-- От сервера: {message_data.get('type')}: '{message_data.get('text', '')}'")
+                if message_data.get('type') == 'avatar_speech':
+                    text = message_data.get('text', '')
+                    if "всего доброго" in text.lower() or "хорошего дня" in text.lower() or "на этом у меня все" in text.lower() or "вынужден прервать" in text.lower():
+                        print("--- Получена финальная фраза от аватара. Завершение теста. ---")
+                        return
 
     except websockets.ConnectionClosed as e:
         print(f"\n--- Соединение штатно закрыто сервером: Код {e.code} - {e.reason} ---")
@@ -163,7 +166,8 @@ async def main():
         try:
             token, app_id = setup_environment()
         except Exception as e:
-            print(f"!!! КРИТИЧЕСКАЯ ОШИБКА подготовки: {e}"); return
+            print(f"!!! КРИТИЧЕСКАЯ ОШИБКА подготовки: {e}");
+            return
     else:
         app_id = EXISTING_APPLICATION_ID
         token = get_access_token(CANDIDATE_EMAIL, CANDIDATE_PASSWORD)
