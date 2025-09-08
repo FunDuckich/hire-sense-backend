@@ -10,7 +10,7 @@ from starlette.websockets import WebSocketState
 
 from app.core.database import SessionLocal
 from app.core.config import settings
-from app.models.interview import InterviewStatus
+from app.models.interview import InterviewStatus, TranscriptRole
 from app.models.user import User
 from app.repositories.interview_repository import InterviewRepository
 from app.repositories.application_repository import ApplicationRepository
@@ -19,8 +19,8 @@ from app.schemas.interview import InterviewSessionStartOut
 from app.services.interview_director import InterviewDirector
 from app.services import stt_service, tts_service, llm_service
 from app.background_tasks import run_interview_analysis
-from app.api.dependencies import get_db, get_current_candidate_user, get_current_user_ws # get_current_candidate_user здесь уже не используется напрямую, но пусть будет
-
+from app.api.dependencies import get_db, get_current_candidate_user, \
+    get_current_user_ws  # get_current_candidate_user здесь уже не используется напрямую, но пусть будет
 
 router = APIRouter()
 
@@ -107,7 +107,8 @@ async def websocket_endpoint(
 
             while True:
                 try:
-                    message = await asyncio.wait_for(websocket.receive(), timeout=settings.CANDIDATE_SILENCE_TIMEOUT_SECONDS)
+                    message = await asyncio.wait_for(websocket.receive(),
+                                                     timeout=settings.CANDIDATE_SILENCE_TIMEOUT_SECONDS)
                     if "bytes" in message:
                         has_started_speaking = True
                         audio_chunks.append(message["bytes"])
@@ -119,21 +120,33 @@ async def websocket_endpoint(
                     if not has_started_speaking and websocket.client_state == WebSocketState.CONNECTED:
                         print("[WebSocket] Кандидат долго молчит. Отправка поддерживающей фразы.")
                         text_to_say_support = llm_service.generate_support_phrase(director.dialogue_history)
+                        director._record_message(text_to_say_support, TranscriptRole.AVATAR)
                         await _send_avatar_speech(websocket, text_to_say_support)
                     else:
                         break
 
-            recognized_text = ""
+            recognized_text = None
             if audio_chunks:
+                final_text_parts = []
+
                 async def audio_generator():
                     for chunk in audio_chunks:
                         yield chunk
 
                 async for result in stt_service.recognize_stream(audio_generator()):
                     await websocket.send_json(result)
-                    if result.get("type") in ["final", "final_refinement"]:
-                        recognized_text += result.get("text", "") + " "
-                recognized_text = recognized_text.strip()
+                    event_type = result.get("type")
+                    text = result.get("text", "")
+
+                    if event_type == "final":
+                        final_text_parts.append(text)
+                    elif event_type == "final_refinement":
+                        if final_text_parts:
+                            final_text_parts[-1] = text
+                        else:
+                            final_text_parts.append(text)
+
+                recognized_text = " ".join(final_text_parts).strip()
 
             if recognized_text:
                 text_to_say_next = director.handle_candidate_response(recognized_text)
