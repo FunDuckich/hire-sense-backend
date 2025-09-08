@@ -24,6 +24,7 @@ class InterviewDirector:
         self._initialize_history()
 
         self.irrelevant_answer_count = 0
+        self.silence_count = 0
         self.MAX_IRRELEVANT_ANSWERS = settings.MAX_IRRELEVANT_ANSWERS
 
         self.force_terminated = False
@@ -82,6 +83,7 @@ class InterviewDirector:
         return full_text
 
     def handle_candidate_response(self, text: str) -> str:
+        self.silence_count = 0
         self._record_message(text, TranscriptRole.CANDIDATE)
 
         complexity = self.context.get('vacancy_complexity')
@@ -124,6 +126,27 @@ class InterviewDirector:
 
         self._record_message(next_question, TranscriptRole.AVATAR)
         return next_question
+
+    def handle_candidate_silence(self) -> str:
+        self.silence_count += 1
+        print(f"[Director] Silence count incremented to: {self.silence_count}")
+
+        if self.silence_count >= settings.MAX_SILENCE_PROMPTS:
+            self.force_terminated = True
+            print(f"[Director] Max silence prompts reached. Terminating interview.")
+            text_to_say = llm_service.generate_closing_phrase(
+                candidate_name=self.context.get('candidate_name', 'кандидат'),
+                dialogue_history=self.dialogue_history,
+                reason='abandoned'
+            )
+        else:
+            print(f"[Director] Generating support phrase.")
+            text_to_say = llm_service.generate_support_phrase(
+                self.dialogue_history
+            )
+
+        self._record_message(text_to_say, TranscriptRole.AVATAR)
+        return text_to_say
 
     def _get_final_phrase(self, reason: str = 'normal') -> str:
         self.is_finished_correctly = True

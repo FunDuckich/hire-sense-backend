@@ -61,18 +61,16 @@ def start_interview_session(
 
 
 async def _send_avatar_speech(websocket: WebSocket, text: str):
+    if not text:
+        return
     try:
-        # Используем asyncio.to_thread для запуска синхронной функции tts_service.synthesize_speech в отдельном потоке
-        audio_data = await asyncio.to_thread(tts_service.synthesize_speech, text)
+        loop = asyncio.get_running_loop()
+        audio_data = await loop.run_in_executor(None, tts_service.synthesize_speech, text)
         if audio_data:
             audio_b64 = base64.b64encode(audio_data).decode('utf-8')
-            await websocket.send_json({
-                "type": "avatar_speech",
-                "text": text,
-                "audio_b64": audio_b64
-            })
+            await websocket.send_json({"type": "avatar_speech", "text": text, "audio_b64": audio_b64})
     except Exception as e:
-        print(f"Ошибка при отправке речи аватара: {e}")
+        print(f"Error in _send_avatar_speech: {e}")
 
 
 @router.websocket("/ws/{session_id}")
@@ -98,7 +96,6 @@ async def websocket_endpoint(
         director = InterviewDirector(session_id=session_id, db=db)
 
         text_to_say = director.start()
-
         await _send_avatar_speech(websocket, text_to_say)
 
         while not (director.is_finished_correctly or director.force_terminated):
@@ -118,14 +115,20 @@ async def websocket_endpoint(
                             break
                 except asyncio.TimeoutError:
                     if not has_started_speaking and websocket.client_state == WebSocketState.CONNECTED:
-                        print("[WebSocket] Кандидат долго молчит. Отправка поддерживающей фразы.")
-                        text_to_say_support = llm_service.generate_support_phrase(director.dialogue_history)
-                        director._record_message(text_to_say_support, TranscriptRole.AVATAR)
-                        await _send_avatar_speech(websocket, text_to_say_support)
+                        print("[WebSocket] Кандидат долго молчит. Обработка через Director...")
+
+                        text_to_say = director.handle_candidate_silence()
+                        await _send_avatar_speech(websocket, text_to_say)
+
+                        if director.force_terminated:
+                            break
                     else:
                         break
 
-            recognized_text = None
+            if director.force_terminated:
+                break
+
+            recognized_text = ""
             if audio_chunks:
                 final_text_parts = []
 
@@ -148,11 +151,10 @@ async def websocket_endpoint(
 
                 recognized_text = " ".join(final_text_parts).strip()
 
-            if recognized_text:
-                text_to_say_next = director.handle_candidate_response(recognized_text)
-            else:
-                text_to_say_next = "Извините, я вас не расслышал. Можете повторить, пожалуйста?"
+            if not recognized_text:
+                continue
 
+            text_to_say_next = director.handle_candidate_response(recognized_text)
             await _send_avatar_speech(websocket, text_to_say_next)
 
         print("Основной цикл диалога завершен. Отправка сигнала о закрытии клиенту.")
