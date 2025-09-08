@@ -87,7 +87,6 @@ class InterviewDirector:
         self._record_message(text, TranscriptRole.CANDIDATE)
 
         complexity = self.context.get('vacancy_complexity')
-
         behavior_flags = llm_service.analyze_candidate_behavior(self.dialogue_history)
 
         if behavior_flags and behavior_flags.get("is_toxic"):
@@ -95,7 +94,7 @@ class InterviewDirector:
 
         if behavior_flags and behavior_flags.get("is_off_topic"):
             self.irrelevant_answer_count += 1
-            if self.irrelevant_answer_count >= self.MAX_IRRELEVANT_ANSWERS:
+            if self.irrelevant_answer_count >= settings.MAX_IRRELEVANT_ANSWERS:
                 return self._terminate_for_behavior("off_topic")
             else:
                 last_question = self.dialogue_history[-2].get("text", "")
@@ -103,8 +102,15 @@ class InterviewDirector:
 
         self.irrelevant_answer_count = 0
 
-        if time.time() - self.start_time > self.max_duration_seconds:
-            return self._get_final_phrase()
+        last_question = next((msg['text'] for msg in reversed(self.dialogue_history) if msg['role'] == 'assistant'), "")
+
+        depth_analysis = {"depth_score": 3, "summary": "Нет данных для анализа."}
+        if last_question:
+            depth_analysis = llm_service.evaluate_answer_depth(
+                question=last_question,
+                answer=text
+            )
+            print(f"[Director] Анализ ответа: {depth_analysis}")
 
         if time.time() - self.start_time > self.max_duration_seconds:
             return self._get_final_phrase(reason='time_limit')
@@ -121,7 +127,8 @@ class InterviewDirector:
             history=self.dialogue_history,
             vacancy_details=self.context.get("vacancy_details", {}),
             resume_summary=self.context.get("screening_result", {}),
-            complexity=complexity
+            complexity=complexity,
+            last_answer_analysis=depth_analysis
         )
 
         self._record_message(next_question, TranscriptRole.AVATAR)

@@ -153,38 +153,95 @@ def analyze_resume(vacancy_details: dict, resume_md: str) -> dict | None:
     return _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.4)
 
 
-def get_interview_response(history: list[dict], vacancy_details: dict, resume_summary: dict, complexity: str) -> str:
+def evaluate_answer_depth(question: str, answer: str) -> dict:
     system_prompt = (
-        f"Ты — HR-аватар Алекс. Веди первичное IT-собеседование на позицию с ожидаемым уровнем кандидата: '{complexity}'. "
-        "Будь профессионален, вежлив. Задавай по ОДНОМУ открытому вопросу за раз. "
-        "Твоя цель — раскрыть опыт кандидата. Адаптируй сложность вопросов под указанный уровень. "
-        "Если ответ короткий, задай уточняющий вопрос по той же теме. Не повторяйся."
+        "Ты — AI-супервайзер, оценивающий качество ответа на техническом собеседовании. "
+        "Твоя задача — строго оценить ответ по шкале от 1 до 5 и дать краткое, емкое пояснение. "
+        "Твой ответ ДОЛЖЕН БЫТЬ ТОЛЬКО в формате валидного JSON."
     )
+    user_prompt = f"""
+    Проанализируй ответ кандидата на заданный вопрос.
+
+    - Вопрос: "{question}"
+    - Ответ: "{answer}"
+
+    Критерии оценки:
+    - 1: Ответ полностью нерелевантен, является прямым отказом отвечать или бессмысленен.
+    - 2: Ответ очень поверхностный, состоит из общих слов без какой-либо конкретики.
+    - 3: Ответ по теме, но не содержит глубоких деталей или примеров. Базовый, 'студенческий' уровень.
+    - 4: Хороший, развернутый ответ, есть конкретика, кандидат демонстрирует понимание темы.
+    - 5: Отличный, глубокий ответ с практическими примерами, демонстрирующий реальную экспертизу.
+
+    Верни JSON строго по следующей структуре:
+    {{
+      "depth_score": <number, 1-5>,
+      "summary": "<string, краткое обоснование оценки в 1 предложение>"
+    }}
+    """
+    # TODO В будущем здесь можно использовать более дешевую Lite-модель.
+    analysis = _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.1)
+
+    return analysis or {"depth_score": 3, "summary": "Не удалось провести автоматическую оценку ответа."}
+
+
+def get_interview_response(
+        history: list[dict],
+        vacancy_details: dict,
+        resume_summary: dict,
+        complexity: str,
+        last_answer_analysis: dict | None = None
+) -> str:
+    system_prompt = (
+        f"Ты — HR-аватар Алекс. Ты проводишь первичное IT-собеседование на позицию "
+        f"'{vacancy_details.get('job_title', '')}' уровня '{complexity}'. "
+        "Будь вежлив, но профессионален. Задавай по одному вопросу за раз. Твоя цель — проверить "
+        "компетенции кандидата в соответствии с требованиями вакансии."
+    )
+
     vacancy_context = json.dumps(vacancy_details, ensure_ascii=False, indent=2)
     resume_context = json.dumps(resume_summary, ensure_ascii=False, indent=2)
+
+    instruction_block = ""
+    if last_answer_analysis:
+        score = last_answer_analysis.get("depth_score", 3)
+        summary = last_answer_analysis.get("summary", "")
+
+        if score >= 4:
+            instruction_block = f"""
+АНАЛИЗ ПОСЛЕДНЕГО ОТВЕТА: Оценка {score}/5. {summary}.
+ЗАДАЧА: Ответ кандидата был очень хорошим и глубоким. Задай **углубляющий, уточняющий вопрос по этой же теме**, чтобы раскрыть ее еще больше. Не переходи к новой теме.
+"""
+        else:
+            instruction_block = f"""
+АНАЛИЗ ПОСЛЕДНЕГО ОТВЕТА: Оценка {score}/5. {summary}.
+ЗАДАЧА: Ответ кандидата был базовым или слабым. **Плавно смени тему** и задай вопрос по следующему нераскрытому критерию из описания вакансии. Не продолжай текущую тему.
+"""
+    else:
+        instruction_block = "ЗАДАЧА: Это начало диалога. Сгенерируй следующий логичный вопрос для кандидата."
+
     user_prompt = f"""
-    Информация о вакансии:
-    ---
-    {vacancy_context}
-    ---
-    Выжимка из резюме и вопросы для уточнения:
-    ---
-    {resume_context}
-    ---
-    История диалога:
-    ---
-    {json.dumps(history, ensure_ascii=False, indent=2)}
-    ---
-    ЗАДАЧА: Сгенерируй СЛЕДУЮЩИЙ ОДИН вопрос или реплику для кандидата.
-    Твой ответ должен быть только текстом вопроса. Без лишних слов, вроде "Хорошо, следующий вопрос:".
-    """
+Информация о вакансии:
+---
+{vacancy_context}
+---
+Выжимка из резюме и первоначальные вопросы для уточнения:
+---
+{resume_context}
+---
+История диалога (последние сообщения самые важные):
+---
+{json.dumps(history, ensure_ascii=False, indent=2)}
+---
 
-    response_text = _call_yandex_gpt(system_prompt, user_prompt, temperature=0.5)
+{instruction_block}  # <--- 3. ИСПОЛЬЗУЕМ ДИНАМИЧЕСКУЮ ИНСТРУКЦИЮ
 
-    if not response_text:
-        return "Понятно, спасибо. Расскажите, пожалуйста, о проекте, которым вы больше всего гордитесь."
+Твой ответ должен быть только текстом вопроса. Без лишних слов, вроде "Хорошо, а теперь расскажите:" или "Следующий вопрос:".
+"""
 
-    return response_text
+    response_text = _call_yandex_gpt(system_prompt, user_prompt, temperature=0.6)
+
+    fallback_question = "Расскажите о самом сложном техническом вызове, с которым вы сталкивались на предыдущем месте работы."
+    return response_text or fallback_question
 
 
 def analyze_interview_transcript(transcript: str, vacancy_details: dict, screening_report: dict,
