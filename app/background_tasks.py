@@ -75,12 +75,12 @@ def run_interview_analysis(session_id: int, is_completed_correctly: bool):
     print(f"Запуск анализа для сессии #{session_id}. Завершено корректно: {is_completed_correctly}")
 
     async def _run_async():
-        db: Session = SessionLocal()
+        db: AsyncSession = SessionLocal()
         try:
             report_repo = ReportRepository(db)
             existing_report = await report_repo.get_report_by_session_id(session_id)
             if existing_report:
-                print(f"Отчет для сессии #{session_id} уже существует. Пропускаем анализ.")
+                print(f"Отчет для сессии #{session_id} уже существует. Пропускаем.")
                 return
 
             interview_repo = InterviewRepository(db)
@@ -90,17 +90,44 @@ def run_interview_analysis(session_id: int, is_completed_correctly: bool):
                 return
 
             transcript_text = "\n".join(f"{entry.role.value}: {entry.message}" for entry in session.transcript)
+            if not transcript_text.strip() and is_completed_correctly:
+                print(f"Ошибка: транскрипция для сессии #{session_id} пуста.")
+                return
 
-            # ... (логика if is_completed_correctly для выбора типа анализа - без изменений)
+            # === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
+            analysis_result = None
+            # ==========================
+
+            if is_completed_correctly:
+                print(f"Запуск полного анализа для сессии #{session_id}.")
+                vacancy = session.application.vacancy
+                screening_result = session.application.screening_result
+                vacancy_details = {
+                    "job_title": vacancy.job_title,
+                    "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in
+                                            vacancy.evaluation_criteria]
+                }
+                screening_report = screening_result.result_json if screening_result else {}
+                analysis_result = llm_service.analyze_interview_transcript(
+                    transcript=transcript_text,
+                    vacancy_details=vacancy_details,
+                    screening_report=screening_report,
+                    complexity=vacancy.complexity or "Не указан"
+                )
+            else:
+                print(f"Запуск 'дешевого' анализа для прерванной сессии #{session_id}.")
+                analysis_result = llm_service.analyze_interrupted_transcript(transcript_text)
 
             if not analysis_result:
-                analysis_result = {"status_note": "Ошибка при генерации отчета AI."}
+                print(f"Не удалось сгенерировать отчет для сессии #{session_id} (LLM вернул None).")
+                analysis_result = {
+                    "status_note": "Ошибка при генерации отчета AI.",
+                    "summary": "Не удалось проанализировать диалог. Возможно, произошла ошибка на стороне AI-сервиса."
+                }
 
             await report_repo.create_report(session_id=session_id, analysis_data=analysis_result)
-            await interview_repo.update_session_as_completed(
-                session_id=session_id, is_completed_correctly=is_completed_correctly
-            )
             print(f"Анализ для сессии #{session_id} успешно завершен и сохранен.")
+
         except Exception as e:
             print(f"!!! КРИТИЧЕСКАЯ ОШИБКА ВНУТРИ run_interview_analysis для сессии #{session_id} !!!")
             traceback.print_exc()
