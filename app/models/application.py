@@ -30,3 +30,4 @@ class Application(Base):
     interview_session = relationship("InterviewSession", uselist=False, back_populates="application")
     screening_result = relationship("ApplicationScreeningResult", uselist=False, back_populates="application")
     interview_report = association_proxy("interview_session", "report")
+    interview_session_id = association_proxy("interview_session", "id")

@@ -10,7 +10,6 @@ from app.background_tasks import run_resume_screening
 
 router = APIRouter()
 
-
 @router.post("/vacancies/{vacancy_id}/apply", response_model=ApplicationCreateOut, status_code=status.HTTP_202_ACCEPTED)
 async def apply_for_vacancy(
         vacancy_id: int,
@@ -29,7 +28,6 @@ async def apply_for_vacancy(
     background_tasks.add_task(run_resume_screening, application.id)
     return {"application_id": application.id, "message": "Your application has been accepted and is being processed."}
 
-
 @router.get("/applications/{application_id}", response_model=ApplicationDetailsOut)
 async def read_application_details(
         application_id: int,
@@ -44,7 +42,6 @@ async def read_application_details(
         raise HTTPException(status_code=403, detail="Not authorized to access this application")
     return application
 
-
 @router.get("/applications/my", response_model=List[ApplicationForCandidateOut])
 async def read_my_applications(
         db: AsyncSession = Depends(get_db),
@@ -53,4 +50,5 @@ async def read_my_applications(
     if current_user.role == Role.HR:
         raise HTTPException(status_code=403, detail="This endpoint is for candidates only.")
     app_repo = ApplicationRepository(db)
-    return await app_repo.get_applications_for_user(user_id=current_user.id)
+    applications = await app_repo.get_applications_for_user(user_id=current_user.id)
+    return applications

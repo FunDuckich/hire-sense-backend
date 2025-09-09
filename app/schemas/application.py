@@ -28,7 +28,8 @@ class ApplicationDetailsOut(BaseModel):
     status: ApplicationStatus
     candidate: UserOut
     resume_md: str
-
+    vacancy: VacancyOut
+    interview_session_id: int | None = None
     screening_result: ScreeningReportOut | None = None
     interview_report: InterviewReportOut | None = None
 
@@ -37,21 +38,17 @@ class ApplicationDetailsOut(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def assemble_nested_reports(cls, data: Any) -> Any:
-        if not isinstance(data, ApplicationModel):
-            return data
-
-        output_data = dict(data.__dict__)
-
-        if data.screening_result:
-            output_data['screening_result'] = data.screening_result.result_json
-
-        if hasattr(data, 'interview_report'):
-            output_data['interview_report'] = data.interview_report
-        elif data.interview_session and data.interview_session.report:
-            output_data['interview_report'] = data.interview_session.report
-
-        return output_data
+    def assemble_everything(cls, data: Any) -> Any:
+        if isinstance(data, ApplicationModel):
+            output = data.__dict__
+            if data.screening_result:
+                output['screening_result'] = data.screening_result.result_json
+            if data.interview_report:
+                output['interview_report'] = data.interview_report
+            if data.interview_session:
+                output['interview_session_id'] = data.interview_session.id
+            return output
+        return data
 
 
 class ApplicationForHROut(BaseModel):
@@ -63,6 +60,7 @@ class ApplicationForHROut(BaseModel):
     screening_match_score: int | None = None
     interview_overall_score: int | None = None
     interview_was_completed_correctly: bool | None = None
+    interview_session_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -87,6 +85,7 @@ class ApplicationForHROut(BaseModel):
 
             if data.interview_session:
                 output_data['interview_was_completed_correctly'] = data.interview_session.is_completed_correctly
+                output_data['interview_session_id'] = data.interview_session.id
 
             if data.interview_report and data.interview_report.analysis_result:
                 score = data.interview_report.analysis_result.get("overall_score")
