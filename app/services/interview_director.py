@@ -65,14 +65,14 @@ class InterviewDirector:
         role_str = "assistant" if role == TranscriptRole.AVATAR else "user"
         self.dialogue_history.append({"role": role_str, "text": text})
 
-    async def start(self) -> str:
+    def start(self) -> str:
         first_question = self.context.get("screening_result", {}).get("questions_to_ask", [None])[0]
         full_text = llm_service.generate_greeting_phrase(
             candidate_name=self.context.get('candidate_name'),
             vacancy_title=self.context.get('vacancy_title'),
             first_question=first_question
         )
-        await self._record_message(full_text, TranscriptRole.AVATAR)
+        self._record_message(full_text, TranscriptRole.AVATAR)
         return full_text
 
     async def handle_candidate_response(self, text: str) -> str:

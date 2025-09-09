@@ -35,11 +35,6 @@ async def register_hr(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    if not user_in.company_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Company name is required for HR",
-        )
     user_in.role = Role.HR
     return await user_repo.create_user(user=user_in)
 
