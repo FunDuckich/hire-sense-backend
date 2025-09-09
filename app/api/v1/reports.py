@@ -1,13 +1,41 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.api.dependencies import get_db, get_current_hr_user
+from app.api.dependencies import get_db, get_current_hr_user, get_current_candidate_user
 from app.models.user import User
+from app.repositories.application_repository import ApplicationRepository
 from app.repositories.interview_repository import InterviewRepository
 from app.repositories.report_repository import ReportRepository
-from app.schemas.report import InterviewReportOut
+from app.schemas.report import InterviewReportOut, CandidateFeedbackOut
 from app.schemas.interview import InterviewTranscriptOut
 
 router = APIRouter()
+
+
+@router.get(
+    "/applications/{application_id}/feedback",
+    response_model=CandidateFeedbackOut,
+    summary="Get feedback for the candidate after an interview"
+)
+def get_interview_feedback_for_candidate(
+        application_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_candidate_user)
+):
+    app_repo = ApplicationRepository(db)
+    application = app_repo.get_application_with_report(application_id)
+
+    if not application or application.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Application not found for the current user.")
+
+    if not application.interview_report:
+        raise HTTPException(status_code=404, detail="Feedback is not ready yet.")
+
+    feedback_data = application.interview_report.analysis_result.get("candidate_feedback")
+
+    if not feedback_data:
+        return CandidateFeedbackOut()
+
+    return CandidateFeedbackOut(**feedback_data)
 
 
 @router.get(
