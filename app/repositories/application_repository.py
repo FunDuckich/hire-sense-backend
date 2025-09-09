@@ -53,3 +53,9 @@ class ApplicationRepository:
         ).where(Application.user_id == user_id).order_by(Application.created_at.desc())
 
         return self.db.execute(statement).unique().scalars().all()
+
+    def get_application_with_report(self, application_id: int) -> Application | None:
+        statement = select(Application).options(
+            joinedload(Application.interview_session).joinedload(InterviewSession.report)
+        ).where(Application.id == application_id)
+        return self.db.execute(statement).unique().scalar_one_or_none()

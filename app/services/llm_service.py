@@ -264,6 +264,11 @@ def analyze_interview_transcript(transcript: str, vacancy_details: dict, screeni
       {{ "criterion": "<Название критерия 1 из вакансии>", "score": <number, 0-10, оценка по этому критерию> }},
       {{ "criterion": "<Название критерия 2 из вакансии>", "score": <number, 0-10> }}
   ]
+  
+  "candidate_feedback": {
+    "positive_points": ["<список из 2-3 позитивных моментов, отмеченных в ходе интервью, сформулировано ободряюще>"],
+    "areas_for_growth": ["<список из 2-3 тем, где можно улучшить знания, сформулировано конструктивно и вежливо>"]
+}
 }}
 
     ИНСТРУКЦИИ ПО АНАЛИЗУ SOFT SKILLS:
