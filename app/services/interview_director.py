@@ -70,14 +70,11 @@ class InterviewDirector:
         self.dialogue_history.append({"role": role_str, "text": text})
 
     def start(self) -> str:
-        questions = self.context.get("screening_result", {}).get("questions_to_ask", [])
-        greeting_text = f"Здравствуйте, {self.context.get('candidate_name')}! Меня зовут Алекс. Давайте начнем."
-
-        if questions:
-            first_question = questions[0]
-            full_text = f"{greeting_text} В вашем резюме я увидел несколько интересных моментов. {first_question}"
-        else:
-            full_text = f"{greeting_text} Расскажите немного о себе."
+        full_text = llm_service.generate_greeting_phrase(
+            candidate_name=self.context.get('candidate_name'),
+            vacancy_title=self.context.get('vacancy_title'),
+            first_question=self.context.get("screening_result", {}).get("questions_to_ask", [None])[0]
+        )
 
         self._record_message(full_text, TranscriptRole.AVATAR)
         return full_text
@@ -86,31 +83,17 @@ class InterviewDirector:
         self.silence_count = 0
         self._record_message(text, TranscriptRole.CANDIDATE)
 
-        complexity = self.context.get('vacancy_complexity')
         behavior_flags = llm_service.analyze_candidate_behavior(self.dialogue_history)
 
-        if behavior_flags and behavior_flags.get("is_toxic"):
-            return self._terminate_for_behavior("toxic")
+        if behavior_flags and (behavior_flags.get("is_toxic") or behavior_flags.get("wants_to_finish")):
+            return self._terminate_for_behavior("toxic") if behavior_flags.get("is_toxic") else self._get_final_phrase()
 
         if behavior_flags and behavior_flags.get("is_off_topic"):
             self.irrelevant_answer_count += 1
             if self.irrelevant_answer_count >= settings.MAX_IRRELEVANT_ANSWERS:
                 return self._terminate_for_behavior("off_topic")
-            else:
-                last_question = self.dialogue_history[-2].get("text", "")
-                return self._guide_back_to_question(last_question)
-
-        self.irrelevant_answer_count = 0
-
-        last_question = next((msg['text'] for msg in reversed(self.dialogue_history) if msg['role'] == 'assistant'), "")
-
-        depth_analysis = {"depth_score": 3, "summary": "Нет данных для анализа."}
-        if last_question:
-            depth_analysis = llm_service.evaluate_answer_depth(
-                question=last_question,
-                answer=text
-            )
-            print(f"[Director] Анализ ответа: {depth_analysis}")
+        else:
+            self.irrelevant_answer_count = 0
 
         if time.time() - self.start_time > self.max_duration_seconds:
             return self._get_final_phrase(reason='time_limit')
@@ -118,17 +101,22 @@ class InterviewDirector:
         completion_status = llm_service.check_interview_completion(
             self.dialogue_history,
             self.context.get("vacancy_details", {}),
-            complexity
+            self.context.get("vacancy_complexity")
         )
         if completion_status == "FINISH":
             return self._get_final_phrase()
 
+        last_question = next((msg['text'] for msg in reversed(self.dialogue_history) if msg['role'] == 'assistant'), "")
+        depth_analysis = llm_service.evaluate_answer_depth(
+            question=last_question,
+            answer=text
+        )
+
         next_question = llm_service.get_interview_response(
             history=self.dialogue_history,
             vacancy_details=self.context.get("vacancy_details", {}),
-            resume_summary=self.context.get("screening_result", {}),
-            complexity=complexity,
-            last_answer_analysis=depth_analysis
+            last_answer_analysis=depth_analysis,
+            behavior_flags=behavior_flags
         )
 
         self._record_message(next_question, TranscriptRole.AVATAR)
@@ -137,23 +125,23 @@ class InterviewDirector:
     def handle_candidate_silence(self) -> str:
         self.silence_count += 1
         print(f"[Director] Silence count incremented to: {self.silence_count}")
-
         if self.silence_count >= settings.MAX_SILENCE_PROMPTS:
             self.force_terminated = True
-            print(f"[Director] Max silence prompts reached. Terminating interview.")
-            text_to_say = llm_service.generate_closing_phrase(
-                candidate_name=self.context.get('candidate_name', 'кандидат'),
-                dialogue_history=self.dialogue_history,
-                reason='abandoned'
-            )
+            text_to_say = "Похоже, у нас возникли проблемы со связью. Я вынужден завершить интервью. Всего доброго."
+            self._record_message(text_to_say, TranscriptRole.AVATAR)
+            return text_to_say
         else:
-            print(f"[Director] Generating support phrase.")
-            text_to_say = llm_service.generate_support_phrase(
-                self.dialogue_history
-            )
+            print("[Director] Generating support phrase.")
+            text_to_say = llm_service.generate_support_phrase(self.dialogue_history)
+            self._record_message(text_to_say, TranscriptRole.AVATAR)
+            return text_to_say
 
-        self._record_message(text_to_say, TranscriptRole.AVATAR)
-        return text_to_say
+    def finalize_session(self):
+        print(f"Finalizing session {self.session_id} with correct completion: {self.is_finished_correctly}")
+        self.interview_repo.update_session_as_completed(
+            session_id=self.session_id,
+            is_completed_correctly=self.is_finished_correctly
+        )
 
     def _get_final_phrase(self, reason: str = 'normal') -> str:
         self.is_finished_correctly = True
@@ -162,6 +150,7 @@ class InterviewDirector:
             dialogue_history=self.dialogue_history,
             reason=reason
         )
+        self.is_finished_correctly = True
         self._record_message(final_text, TranscriptRole.AVATAR)
         return final_text
 
@@ -181,7 +170,7 @@ class InterviewDirector:
             )
         else:
             text_to_say = "По техническим причинам интервью завершено."
-
+        self.is_finished_correctly = True
         self.force_terminated = True
         self._record_message(text_to_say, TranscriptRole.AVATAR)
         return text_to_say

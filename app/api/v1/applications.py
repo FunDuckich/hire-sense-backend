@@ -6,15 +6,9 @@ from app.models.user import User
 from app.api.dependencies import get_db, get_current_user, get_current_candidate_user
 from app.repositories.application_repository import ApplicationRepository
 from app.services.resume_parser import parse_resume
-from app.repositories.vacancy_repository import VacancyRepository
-from app.repositories.screening_repository import ScreeningRepository
-from app.services import llm_service
-from app.models.application import ApplicationStatus
 from app.api.dependencies import get_current_hr_user
 from app.schemas.application import ApplicationDetailsOut, ApplicationCreateOut, ApplicationForCandidateOut
-from app.services.email_service import email_service
 from app.background_tasks import run_resume_screening
-from starlette.websockets import WebSocketState
 
 router = APIRouter()
 
@@ -48,6 +42,19 @@ async def apply_for_vacancy(
     }
 
 
+@router.get("/applications/my", response_model=List[ApplicationForCandidateOut])
+def read_my_applications(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    print(f"DEBUG: User '{current_user.email}' with role '{current_user.role}' trying to access /applications/my")
+    if current_user.role == "HR":
+        raise HTTPException(status_code=403, detail="This endpoint is for candidates only.")
+
+    app_repo = ApplicationRepository(db)
+    return app_repo.get_applications_for_user(user_id=current_user.id)
+
+
 @router.get("/applications/{application_id}", response_model=ApplicationDetailsOut)
 def read_application_details(
         application_id: int,
@@ -64,15 +71,3 @@ def read_application_details(
         raise HTTPException(status_code=403, detail="Not authorized to access this application")
 
     return application
-
-
-@router.get("/applications/my", response_model=List[ApplicationForCandidateOut])
-def read_my_applications(
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user)
-):
-    if current_user.role == "HR":
-        raise HTTPException(status_code=403, detail="This endpoint is for candidates only.")
-
-    app_repo = ApplicationRepository(db)
-    return app_repo.get_applications_for_user(user_id=current_user.id)

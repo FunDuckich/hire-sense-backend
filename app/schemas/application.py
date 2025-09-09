@@ -57,19 +57,41 @@ class ApplicationDetailsOut(BaseModel):
 class ApplicationForHROut(BaseModel):
     id: int
     status: ApplicationStatus
+    job_title: str
     candidate: UserOut
 
-    screening_result: ScreeningResultSummaryOut | None = None
+    screening_match_score: int | None = None
+    interview_overall_score: int | None = None
+    interview_was_completed_correctly: bool | None = None
 
     class Config:
         from_attributes = True
 
     @model_validator(mode='before')
     @classmethod
-    def assemble_screening_summary(cls, data: Any) -> Any:
+    def assemble_scores(cls, data: Any) -> Any:
         if isinstance(data, ApplicationModel):
-            output_data = dict(data.__dict__)
-            if data.screening_result:
-                output_data['screening_result'] = data.screening_result.result_json
+            output_data = {
+                "id": data.id,
+                "status": data.status,
+                "job_title": data.vacancy.job_title if data.vacancy else "N/A",
+                "candidate": data.candidate,
+                "screening_match_score": None,
+                "interview_overall_score": None
+            }
+
+            if data.screening_result and data.screening_result.result_json:
+                score = data.screening_result.result_json.get("overall_match_score")
+                if score is not None:
+                    output_data['screening_match_score'] = score
+
+            if data.interview_session:
+                output_data['interview_was_completed_correctly'] = data.interview_session.is_completed_correctly
+
+            if data.interview_report and data.interview_report.analysis_result:
+                score = data.interview_report.analysis_result.get("overall_score")
+                if score is not None:
+                    output_data['interview_overall_score'] = score
+
             return output_data
         return data
