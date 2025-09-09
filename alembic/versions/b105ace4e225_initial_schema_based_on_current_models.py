@@ -38,7 +38,9 @@ def upgrade() -> None:
     sa.Column('job_title', sa.String(), nullable=False),
     sa.Column('company_name', sa.String(), nullable=True),
     sa.Column('location', sa.String(), nullable=True),
-    sa.Column('salary_range', sa.String(), nullable=True),
+    sa.Column('salary_from', sa.Integer(), nullable=True),
+    sa.Column('salary_to', sa.Integer(), nullable=True),
+    sa.Column('currency', sa.String(length=10), nullable=True),
     sa.Column('key_responsibilities', sa.Text(), nullable=True),
     sa.Column('tech_stack', sa.Text(), nullable=True),
     sa.Column('required_experience', sa.Text(), nullable=True),
@@ -140,4 +142,5 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_users_id'), table_name='users')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
+    op.drop_column('vacancies', 'salary_range')
     # ### end Alembic commands ###

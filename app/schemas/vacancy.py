@@ -24,7 +24,10 @@ class VacancyBase(BaseModel):
     job_title: str
     company_name: str | None = None
     location: str | None = None
-    salary_range: str | None = None
+    salary_from: int | None = None
+    salary_to: int | None = None
+    currency: str | None = None
+    # salary_range: str | None = None
     key_responsibilities: str | None = None
     tech_stack: str | None = None
     required_experience: str | None = None
@@ -56,6 +59,24 @@ class VacancyOut(VacancyBase):
     def applications_new_count(self) -> int:
         return len([app for app in self.applications if app.status == ApplicationStatus.SCREENING])
 
+    @computed_field
+    @property
+    def salary_display(self) -> str | None:
+        parts = []
+        if self.salary_from:
+            parts.append(f"от {self.salary_from:,}".replace(',', ' '))
+        if self.salary_to:
+            parts.append(f"до {self.salary_to:,}".replace(',', ' '))
+
+        if not parts:
+            return None
+
+        salary_str = " ".join(parts)
+        if self.currency:
+            salary_str += f" {self.currency.upper()}"
+
+        return salary_str
+
     class Config:
         from_attributes = True
 
@@ -64,7 +85,10 @@ class VacancyUpdate(BaseModel):
     job_title: str | None = None
     company_name: str | None = None
     location: str | None = None
-    salary_range: str | None = None
+    salary_from: int | None = None
+    salary_to: int | None = None
+    currency: str | None = None
+    # salary_range: str | None = None
     key_responsibilities: str | None = None
     tech_stack: str | None = None
     required_experience: str | None = None

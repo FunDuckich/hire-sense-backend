@@ -491,25 +491,34 @@ def generate_closing_phrase(candidate_name: str, dialogue_history: list[dict], r
 
 def parse_vacancy_from_text(vacancy_text: str) -> dict | None:
     system_prompt = (
-        "Ты — AI-ассистент, который помогает HR-специалистам. Твоя задача — извлечь из текста вакансии "
-        "структурированную информацию и, что самое важное, сгенерировать на ее основе ключевые критерии оценки. "
+        "Ты — AI-ассистент для HR. Твоя задача — извлечь из текста вакансии "
+        "структурированную информацию и сгенерировать на ее основе ключевые критерии оценки. "
         "Ответ ДОЛЖЕН БЫТЬ ТОЛЬКО в формате валидного JSON. "
-        "Если какую-то информацию найти не удалось, пропусти это поле."
+        "Если какую-то информацию найти не удалось, просто пропусти это поле в итоговом JSON."
     )
     user_prompt = f"""
     Проанализируй текст вакансии. Верни JSON со следующими полями:
     - job_title, company_name, location, key_responsibilities, hard_skills, soft_skills
-    - evaluation_criteria: Это массив объектов. На основе всего текста сгенерируй 3-5 САМЫХ ВАЖНЫХ критериев для оценки кандидата. У каждого критерия должно быть два поля: "criterion" (название) и "weight" (вес в процентах). СУММА ВСЕХ ВЕСОВ ДОЛЖНА БЫТЬ РАВНА 100.
+    - salary_from: ЧИСЛО "зарплата от". Извлекай только цифры. Например, "от 150 тыс" -> 150000.
+    - salary_to: ЧИСЛО "зарплата до". Извлекай только цифры.
+    - currency: Валюта (например, "RUB", "USD", "EUR"). Определи по контексту (руб, $, евро).
+    - evaluation_criteria: Массив объектов. Сгенерируй 3-5 САМЫХ ВАЖНЫХ критериев для оценки. У каждого критерия должны быть поля "criterion" (название) и "weight" (вес). СУММА ВСЕХ ВЕСОВ ДОЛЖНА БЫТЬ РАВНА 100.
 
-    ПРИМЕР ОЖИДАЕМОГО JSON:
+    ПРИМЕР 1:
+    Входной текст: "Ищем разработчика, зарплата 100 - 150 тысяч рублей."
+    Ожидаемый JSON (фрагмент):
     {{
-      "job_title": "Senior Python Developer",
-      "hard_skills": "Python\\nSQL",
-      "evaluation_criteria": [
-        {{ "criterion": "Опыт с Python и FastAPI", "weight": 50 }},
-        {{ "criterion": "Глубокое знание SQL", "weight": 30 }},
-        {{ "criterion": "Опыт работы в команде", "weight": 20 }}
-      ]
+      "salary_from": 100000,
+      "salary_to": 150000,
+      "currency": "RUB"
+    }}
+
+    ПРИМЕР 2:
+    Входной текст: "ЗП до $2000."
+    Ожидаемый JSON (фрагмент):
+    {{
+      "salary_to": 2000,
+      "currency": "USD"
     }}
 
     ТЕКСТ ВАКАНСИИ ДЛЯ АНАЛИЗА:
@@ -517,7 +526,7 @@ def parse_vacancy_from_text(vacancy_text: str) -> dict | None:
     {vacancy_text}
     ---
     """
-    return _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.2)
+    return _call_yandex_gpt_and_parse_json(system_prompt, user_prompt, temperature=0.1)
 
 
 def generate_greeting_phrase(candidate_name: str, vacancy_title: str, first_question: str | None) -> str:
