@@ -8,7 +8,7 @@ from app.repositories.application_repository import ApplicationRepository
 from app.schemas.vacancy import VacancyCreate, VacancyOut, VacancyUpdate
 from app.schemas.application import ApplicationForHROut
 from app.services import llm_service
-from app.services.resume_parser import parse_resume
+from app.services.file_parser import parse_resume
 
 router = APIRouter()
 

@@ -81,17 +81,14 @@ async def websocket_endpoint(
 
         while not director.is_finished_correctly and not director.force_terminated:
 
-            message_json = await websocket.receive_json()
-            if message_json.get("type") != "user_ready_to_speak":
-                continue
-
             audio_chunk_queue = asyncio.Queue()
             stt_results = []
 
             async def audio_generator():
                 while True:
                     chunk = await audio_chunk_queue.get()
-                    if chunk is None: break
+                    if chunk is None:
+                        break
                     yield chunk
 
             async def recognition_task_func():
@@ -103,35 +100,45 @@ async def websocket_endpoint(
             recognition_task = asyncio.create_task(recognition_task_func())
 
             while True:
-                message = await websocket.receive()
-                if "bytes" in message:
-                    await audio_chunk_queue.put(message["bytes"])
-                elif "text" in message:
-                    if json.loads(message["text"]).get("type") == "user_speech_end":
+                try:
+                    message = await websocket.receive()
+                    if "bytes" in message:
+                        await audio_chunk_queue.put(message["bytes"])
+
+                    last_result = stt_results[-1] if stt_results else None
+                    if last_result and last_result.get("type") == "final_refinement":
+                        print("[WS] Final refinement received from Yandex STT. Ending listen loop.")
                         break
+                except WebSocketDisconnect:
+                    break
 
             await audio_chunk_queue.put(None)
             await recognition_task
 
-            final_text = "".join(
-                r.get("text", "") for r in stt_results if r.get("type") in ["final_refinement", "final"]).strip()
+            if websocket.client_state != WebSocketState.CONNECTED:
+                break
+
+            final_text = "".join(r.get("text", "") for r in stt_results if r.get("type") == "final_refinement").strip()
+            if not final_text:
+                final_text = "".join(r.get("text", "") for r in stt_results if r.get("type") == "final").strip()
 
             if final_text:
                 text_to_say = director.handle_candidate_response(final_text)
             else:
-                text_to_say = "Простите, я вас не расслышал. Можете повторить?"
-                director._record_message(text_to_say, TranscriptRole.AVATAR)
+                text_to_say = director.handle_candidate_silence()
 
             await _send_avatar_speech(websocket, text_to_say)
 
     except (WebSocketDisconnect, asyncio.CancelledError):
         print(f"Connection gracefully closed for session {session_id}")
     finally:
-        if recognizer: await recognizer.close()
+        if recognizer:
+            await recognizer.close()
         if director:
             director.finalize_session()
 
-            def run_analysis_sync(): run_interview_analysis(session_id, director.is_finished_correctly)
+            def run_analysis_sync():
+                run_interview_analysis(session_id, director.is_finished_correctly)
 
             loop = asyncio.get_running_loop()
             loop.run_in_executor(None, run_analysis_sync)
