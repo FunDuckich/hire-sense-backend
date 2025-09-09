@@ -42,9 +42,9 @@ class ApplicationRepository:
     def get_applications_for_vacancy(self, vacancy_id: int) -> list[Application]:
         statement = select(Application).options(
             joinedload(Application.candidate),
-            joinedload(Application.screening_result)
+            joinedload(Application.screening_result),
+            joinedload(Application.interview_session).joinedload(InterviewSession.report)
         ).where(Application.vacancy_id == vacancy_id)
-
         return self.db.execute(statement).unique().scalars().all()
 
     def get_applications_for_user(self, user_id: int) -> list[Application]:

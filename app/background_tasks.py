@@ -1,3 +1,5 @@
+import traceback
+
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.repositories.application_repository import ApplicationRepository
@@ -75,50 +77,59 @@ def run_interview_analysis(session_id: int, is_completed_correctly: bool):
     print(f"Запуск анализа для сессии #{session_id}. Завершено корректно: {is_completed_correctly}")
     db: Session = SessionLocal()
     try:
-        interview_repo = InterviewRepository(db)
-        report_repo = ReportRepository(db)
+        try:
+            interview_repo = InterviewRepository(db)
+            report_repo = ReportRepository(db)
 
-        session = interview_repo.get_session_with_details(session_id)
-        if not session:
-            print(f"Ошибка анализа: сессия #{session_id} не найдена.")
-            return
+            session = interview_repo.get_session_with_details(session_id)
+            if not session:
+                print(f"Ошибка анализа: сессия #{session_id} не найдена.")
+                return
 
-        transcript_text = "\n".join(
-            f"{entry.role.value}: {entry.message}" for entry in session.transcript
-        )
-        if not transcript_text and is_completed_correctly:
-            print(f"Ошибка анализа: транскрипция для сессии #{session_id} пуста.")
-            return
-
-        analysis_result = None
-        if is_completed_correctly:
-            print(f"Запуск полного анализа для сессии #{session_id}.")
-            vacancy = session.application.vacancy
-            screening_result = session.application.screening_result
-            vacancy_details = {
-                "job_title": vacancy.job_title,
-                "required_experience": vacancy.required_experience,
-                "hard_skills": vacancy.hard_skills,
-                "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in
-                                        vacancy.evaluation_criteria]
-            }
-            screening_report = screening_result.result_json if screening_result else {}
-
-            analysis_result = llm_service.analyze_interview_transcript(
-                transcript=transcript_text,
-                vacancy_details=vacancy_details,
-                screening_report=screening_report
+            transcript_text = "\n".join(
+                f"{entry.role.value}: {entry.message}" for entry in session.transcript
             )
-        else:
-            print(f"Запуск 'дешевого' анализа для прерванной сессии #{session_id}.")
-            analysis_result = llm_service.analyze_interrupted_transcript(transcript_text)
+            if not transcript_text and is_completed_correctly:
+                print(f"Ошибка анализа: транскрипция для сессии #{session_id} пуста.")
+                return
 
-        if not analysis_result:
-            print(f"Не удалось сгенерировать отчет для сессии #{session_id}.")
-            return
+            analysis_result = None
+            if is_completed_correctly:
+                print(f"Запуск полного анализа для сессии #{session_id}.")
+                vacancy = session.application.vacancy
+                screening_result = session.application.screening_result
+                vacancy_details = {
+                    "job_title": vacancy.job_title,
+                    "required_experience": vacancy.required_experience,
+                    "hard_skills": vacancy.hard_skills,
+                    "evaluation_criteria": [{"criterion": c.criterion, "weight": c.weight} for c in
+                                            vacancy.evaluation_criteria]
+                }
+                screening_report = screening_result.result_json if screening_result else {}
 
-        report_repo.create_report(session_id=session_id, analysis_data=analysis_result)
-        print(f"Анализ для сессии #{session_id} успешно завершен и сохранен.")
+                analysis_result = llm_service.analyze_interview_transcript(
+                    transcript=transcript_text,
+                    vacancy_details=vacancy_details,
+                    screening_report=screening_report,
+                    complexity=vacancy.complexity or "Не указан"
+                )
+            else:
+                print(f"Запуск 'дешевого' анализа для прерванной сессии #{session_id}.")
+                analysis_result = llm_service.analyze_interrupted_transcript(transcript_text)
 
+            if not analysis_result:
+                print(f"Не удалось сгенерировать отчет для сессии #{session_id}.")
+                return
+
+            report_repo.create_report(session_id=session_id, analysis_data=analysis_result)
+            print(f"Анализ для сессии #{session_id} успешно завершен и сохранен.")
+            interview_repo.update_session_as_completed(
+                session_id=session_id,
+                is_completed_correctly=is_completed_correctly
+            )
+            print(f"Статус для заявки #{session.application.id} обновлен на COMPLETED.")
+        except Exception as e:
+            print(f"!!! КРИТИЧЕСКАЯ ОШИБКА ВНУТРИ run_interview_analysis для сессии #{session_id} !!!")
+            traceback.print_exc()
     finally:
         db.close()

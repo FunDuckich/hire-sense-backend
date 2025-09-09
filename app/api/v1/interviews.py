@@ -1,5 +1,4 @@
 import base64
-import traceback
 import asyncio
 import json
 from datetime import datetime
@@ -7,9 +6,7 @@ import pytz
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketState
-
 from app.core.database import SessionLocal
-from app.core.config import settings
 from app.models.interview import InterviewStatus, TranscriptRole
 from app.models.user import User
 from app.repositories.interview_repository import InterviewRepository
@@ -17,10 +14,11 @@ from app.repositories.application_repository import ApplicationRepository
 from app.models.application import ApplicationStatus
 from app.schemas.interview import InterviewSessionStartOut
 from app.services.interview_director import InterviewDirector
-from app.services import stt_service, tts_service, llm_service
+from app.services import tts_service
 from app.background_tasks import run_interview_analysis
-from app.api.dependencies import get_db, get_current_candidate_user, \
-    get_current_user_ws  # get_current_candidate_user здесь уже не используется напрямую, но пусть будет
+from app.api.dependencies import get_db, get_current_candidate_user, get_current_user_ws
+from app.services.stt_service import StreamRecognizer
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -38,25 +36,18 @@ def start_interview_session(
 ):
     app_repo = ApplicationRepository(db)
     application = app_repo.get_application_by_id(application_id)
-
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
-
     if application.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized for this application")
-
     session = application.interview_session
-
     if not session:
         raise HTTPException(status_code=404, detail="Interview session has not been created for this application yet.")
-
     now_utc = datetime.now(pytz.utc)
     expires_at_utc = session.expires_at.replace(tzinfo=pytz.utc)
-
     if now_utc > expires_at_utc:
         app_repo.update_application_status(application_id, ApplicationStatus.REJECTED)
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="The invitation to this interview has expired.")
-
     return {"interview_session_id": session.id, "status": session.status}
 
 
@@ -77,108 +68,72 @@ async def _send_avatar_speech(websocket: WebSocket, text: str):
 async def websocket_endpoint(
         websocket: WebSocket,
         session_id: int,
-        background_tasks: BackgroundTasks,
         current_user: User = Depends(get_current_user_ws)
 ):
     await websocket.accept()
     db: Session = SessionLocal()
-    director = None
-
+    director, recognizer = None, None
     try:
-        interview_repo = InterviewRepository(db)
-        session = interview_repo.get_session_with_details(session_id)
-        if not session or session.application.user_id != current_user.id or session.status != InterviewStatus.SCHEDULED:
-            reason = "Interview session not found, not authorized, or has invalid status."
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
-            return
-
-        print(f"User {current_user.email} successfully connected to WebSocket session {session_id}.")
         director = InterviewDirector(session_id=session_id, db=db)
+        recognizer = StreamRecognizer()
 
-        text_to_say = director.start()
-        await _send_avatar_speech(websocket, text_to_say)
+        await _send_avatar_speech(websocket, director.start())
 
-        while not (director.is_finished_correctly or director.force_terminated):
-            audio_chunks = []
-            has_started_speaking = False
+        while not director.is_finished_correctly and not director.force_terminated:
 
-            while True:
-                try:
-                    message = await asyncio.wait_for(websocket.receive(),
-                                                     timeout=settings.CANDIDATE_SILENCE_TIMEOUT_SECONDS)
-                    if "bytes" in message:
-                        has_started_speaking = True
-                        audio_chunks.append(message["bytes"])
-                    elif "text" in message:
-                        data = json.loads(message["text"])
-                        if data.get("type") == "stream_end":
-                            break
-                except asyncio.TimeoutError:
-                    if not has_started_speaking and websocket.client_state == WebSocketState.CONNECTED:
-                        print("[WebSocket] Кандидат долго молчит. Обработка через Director...")
-
-                        text_to_say = director.handle_candidate_silence()
-                        await _send_avatar_speech(websocket, text_to_say)
-
-                        if director.force_terminated:
-                            break
-                    else:
-                        break
-
-            if director.force_terminated:
-                break
-
-            recognized_text = ""
-            if audio_chunks:
-                final_text_parts = []
-
-                async def audio_generator():
-                    for chunk in audio_chunks:
-                        yield chunk
-
-                async for result in stt_service.recognize_stream(audio_generator()):
-                    await websocket.send_json(result)
-                    event_type = result.get("type")
-                    text = result.get("text", "")
-
-                    if event_type == "final":
-                        final_text_parts.append(text)
-                    elif event_type == "final_refinement":
-                        if final_text_parts:
-                            final_text_parts[-1] = text
-                        else:
-                            final_text_parts.append(text)
-
-                recognized_text = " ".join(final_text_parts).strip()
-
-            if not recognized_text:
+            message_json = await websocket.receive_json()
+            if message_json.get("type") != "user_ready_to_speak":
                 continue
 
-            text_to_say_next = director.handle_candidate_response(recognized_text)
-            await _send_avatar_speech(websocket, text_to_say_next)
+            audio_chunk_queue = asyncio.Queue()
+            stt_results = []
 
-        print("Основной цикл диалога завершен. Отправка сигнала о закрытии клиенту.")
-        await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+            async def audio_generator():
+                while True:
+                    chunk = await audio_chunk_queue.get()
+                    if chunk is None: break
+                    yield chunk
 
-    except WebSocketDisconnect as e:
-        print(f"Клиент отключился от сессии {session_id} с кодом {e.code}.")
-    except Exception as e:
-        print(f"Необработанная ошибка в WebSocket для сессии {session_id}:")
-        traceback.print_exc()
-        if websocket.client_state != WebSocketState.DISCONNECTED:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            async def recognition_task_func():
+                async for result in recognizer.recognize(audio_generator()):
+                    stt_results.append(result)
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.send_json(result)
+
+            recognition_task = asyncio.create_task(recognition_task_func())
+
+            while True:
+                message = await websocket.receive()
+                if "bytes" in message:
+                    await audio_chunk_queue.put(message["bytes"])
+                elif "text" in message:
+                    if json.loads(message["text"]).get("type") == "user_speech_end":
+                        break
+
+            await audio_chunk_queue.put(None)
+            await recognition_task
+
+            final_text = "".join(
+                r.get("text", "") for r in stt_results if r.get("type") in ["final_refinement", "final"]).strip()
+
+            if final_text:
+                text_to_say = director.handle_candidate_response(final_text)
+            else:
+                text_to_say = "Простите, я вас не расслышал. Можете повторить?"
+                director._record_message(text_to_say, TranscriptRole.AVATAR)
+
+            await _send_avatar_speech(websocket, text_to_say)
+
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        print(f"Connection gracefully closed for session {session_id}")
     finally:
-        print(f"Финализация сессии {session_id}...")
+        if recognizer: await recognizer.close()
         if director:
-            session = director.interview_repo.update_session_completion_status(
-                session_id=session_id,
-                is_completed_correctly=director.is_finished_correctly
-            )
-            if session:
-                background_tasks.add_task(
-                    run_interview_analysis,
-                    session.id,
-                    session.is_completed_correctly
-                )
-                print(f"Фоновая задача анализа для сессии {session_id} запланирована.")
+            director.finalize_session()
+
+            def run_analysis_sync(): run_interview_analysis(session_id, director.is_finished_correctly)
+
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, run_analysis_sync)
         db.close()
+        print(f"Session {session_id} finalized.")

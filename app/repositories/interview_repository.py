@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timezone, timedelta
 
 from app.models.interview import InterviewSession, InterviewStatus, TranscriptRole, InterviewTranscript
-from app.models.application import Application
+from app.models.application import Application, ApplicationStatus
 from app.models.vacancy import Vacancy
 from app.models.report import InterviewReport
 from app.models.user import User
@@ -52,16 +52,16 @@ class InterviewRepository:
 
         return self.db.execute(statement).unique().scalar_one_or_none()
 
-    def update_session_completion_status(self, session_id: int,
-                                         is_completed_correctly: bool) -> InterviewSession | None:
-        db_session = self.db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
-        if db_session:
-            db_session.is_completed_correctly = is_completed_correctly
-            db_session.ended_at = func.now()
-            db_session.status = InterviewStatus.COMPLETED
+    def update_session_as_completed(self, session_id: int, is_completed_correctly: bool):
+        session = self.db.get(InterviewSession, session_id)
+        if session:
+            session.status = InterviewStatus.COMPLETED
+            session.ended_at = datetime.now(timezone.utc)
+            session.is_completed_correctly = is_completed_correctly
+            if session.application:
+                session.application.status = ApplicationStatus.COMPLETED
             self.db.commit()
-            self.db.refresh(db_session)
-        return db_session
+        return session
 
     def get_transcript_for_session(self, session_id: int) -> list[InterviewTranscript]:
         statement = select(InterviewTranscript).where(

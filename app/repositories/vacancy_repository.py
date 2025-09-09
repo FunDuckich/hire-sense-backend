@@ -29,17 +29,30 @@ class VacancyRepository:
         statement = select(Vacancy).options(joinedload(Vacancy.evaluation_criteria))
         return self.db.execute(statement).unique().scalars().all()
 
-    def update_vacancy(self, vacancy_id: int, vacancy_data: VacancyUpdate) -> Vacancy | None:
-        db_vacancy = self.get_vacancy(vacancy_id=vacancy_id)
+    def update_vacancy(self, vacancy_id: int, vacancy_data: "VacancyUpdate") -> Vacancy | None:
+        db_vacancy = self.db.get(Vacancy, vacancy_id)
         if not db_vacancy:
             return None
 
         update_data = vacancy_data.model_dump(exclude_unset=True)
 
+        new_criteria_data = update_data.pop("evaluation_criteria", None)
+
         for key, value in update_data.items():
             setattr(db_vacancy, key, value)
 
-        self.db.add(db_vacancy)
+        if new_criteria_data is not None:
+            for old_criterion in db_vacancy.evaluation_criteria:
+                self.db.delete(old_criterion)
+
+            for criterion_data in new_criteria_data:
+                new_criterion = EvaluationCriterion(
+                    criterion=criterion_data['criterion'],
+                    weight=criterion_data['weight']
+                )
+                db_vacancy.evaluation_criteria.append(new_criterion)
+
+        # 4. Сохраняем все изменения
         self.db.commit()
         self.db.refresh(db_vacancy)
         return db_vacancy

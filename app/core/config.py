@@ -1,3 +1,4 @@
+from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,12 +13,25 @@ class Settings(BaseSettings):
     SCREENING_THRESHOLD: int = 60
     MAX_IRRELEVANT_ANSWERS: int = 2
     CANDIDATE_SILENCE_TIMEOUT_SECONDS: float = 15.0
+    WEBSOCKET_RECEIVE_TIMEOUT_SECONDS: float = 1.5
+    MAX_SILENCE_ITERATIONS_BEFORE_BREAK: int = 3
 
     MAX_SILENCE_PROMPTS: int = 3
 
     YC_SERVICE_ACCOUNT_ID: str
     YC_KEY_ID: str
     YC_FOLDER_ID: str
+
+    @computed_field
+    @property
+    def YC_MODEL_URI(self) -> str:
+        return f"gpt://{self.YC_FOLDER_ID}/yandexgpt/latest"
+
+    @computed_field
+    @property
+    def YC_MODEL_URI_LITE(self) -> str:
+        return f"gpt://{self.YC_FOLDER_ID}/yandexgpt-lite/latest"
+
     YC_SA_KEY_FILE_PATH: str = "authorized_key.json"
 
     SMTP_SERVER: str

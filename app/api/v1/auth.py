@@ -2,7 +2,6 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
-
 from app.schemas.user import UserCreate, UserOut, Role
 from app.schemas.token import Token
 from app.repositories.user_repository import UserRepository
@@ -61,4 +60,4 @@ def login_for_access_token(
     access_token = security.create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "user": user}
