@@ -3,6 +3,8 @@ import grpc
 import inspect
 import yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
+
+from app.core.config import settings
 from app.services.llm_service import get_iam_token
 
 
@@ -31,6 +33,12 @@ SESSION_OPTIONS = stt_pb2.StreamingOptions(
             language_code=['ru-RU']
         ),
         audio_processing_type=stt_pb2.RecognitionModelOptions.AudioProcessingType.REAL_TIME
+    ),
+    eou_classifier=stt_pb2.EouClassifierOptions(
+        default_classifier=stt_pb2.DefaultEouClassifier(
+            type='DEFAULT',
+            max_pause_between_words_hint_ms=settings.YANDEX_STT_EOU_PAUSE_MS
+        )
     )
 )
 

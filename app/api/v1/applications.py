@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.api.dependencies import get_db, get_current_user, get_current_candidate_user
 from app.repositories.application_repository import ApplicationRepository
-from app.services.resume_parser import parse_resume
+from app.services.file_parser import parse_resume
 from app.api.dependencies import get_current_hr_user
 from app.schemas.application import ApplicationDetailsOut, ApplicationCreateOut, ApplicationForCandidateOut
 from app.background_tasks import run_resume_screening
