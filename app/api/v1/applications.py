@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.api.dependencies import get_db, get_current_user, get_current_candidate_user
 from app.repositories.application_repository import ApplicationRepository
-from app.services.file_parser import parse_resume
+from app.services.file_parser import parse_file
 from app.api.dependencies import get_current_hr_user
 from app.schemas.application import ApplicationDetailsOut, ApplicationCreateOut, ApplicationForCandidateOut
 from app.background_tasks import run_resume_screening
@@ -25,7 +25,7 @@ async def apply_for_vacancy(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_candidate_user)
 ):
-    resume_md = await parse_resume(resume_file)
+    resume_md = await parse_file(resume_file)
 
     app_repo = ApplicationRepository(db)
     application = app_repo.create_application(
