@@ -4,7 +4,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    POSTGRES_HOST: str
+    POSTGRES_PORT: int
+
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
@@ -18,17 +23,6 @@ class Settings(BaseSettings):
     MAX_SILENCE_ITERATIONS_BEFORE_BREAK: int = 3
 
     YC_FOLDER_ID: str
-
-    @computed_field
-    @property
-    def YC_MODEL_URI(self) -> str:
-        return f"gpt://{self.YC_FOLDER_ID}/yandexgpt/latest"
-
-    @computed_field
-    @property
-    def YC_MODEL_URI_LITE(self) -> str:
-        return f"gpt://{self.YC_FOLDER_ID}/yandexgpt-lite/latest"
-
     YC_SERVICE_ACCOUNT_ID: str
     YC_KEY_ID: str
     YC_SA_KEY_FILE_PATH: str = "authorized_key.json"
@@ -39,6 +33,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_SENDER: Optional[str] = None
 
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
     @field_validator("SMTP_PORT", mode="before")
     @classmethod
     def empty_str_to_none(cls, v: Any) -> Any:
@@ -48,7 +50,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_file_encoding='utf-8',
+        env_file_encoding="utf-8",
     )
 
 
