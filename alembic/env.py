@@ -80,7 +80,9 @@ def run_migrations_online() -> None:
     from sqlalchemy import engine_from_config, pool
 
     config_section = config.get_section(config.config_ini_section)
-    config_section['sqlalchemy.url'] = settings.DATABASE_URL
+
+    sync_db_url = settings.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2")
+    config_section['sqlalchemy.url'] = sync_db_url
 
     connectable = engine_from_config(
         config_section,
